@@ -154,6 +154,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .rm-item .done { width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
 .rm-item .done::before { content: ""; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--muted); }
 .rm-item .done:active::before { background: var(--accent); border-color: var(--accent); }
+.allday { display: flex; align-items: center; gap: 8px; font-size: 15px; white-space: nowrap; }
+.allday input { width: 22px; height: 22px; accent-color: var(--accent); }
 .rm-msg { font-size: 13px; color: var(--muted); min-height: 1em; }
 .rm-msg.err { color: var(--warn); }
 
@@ -208,6 +210,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <ul class="ev-list" id="today"><li class="empty">読み込み中…</li></ul>
         <h2 style="margin-top:14px">この先一週間</h2>
         <ul class="ev-list upcoming" id="upcoming"></ul>
+        <h2 style="margin-top:14px">予定を追加</h2>
+        <div id="evFormBox"></div>
       </div>
       <div class="col">
         <h2>きょうのルーティン <small id="rCount"></small></h2>
@@ -216,18 +220,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       </div>
       <div class="col c3">
         <h2>リマインダー</h2>
-        <form class="remember" id="rmForm" autocomplete="off">
-          <div class="rm-row">
-            <input type="text" id="rmText" placeholder="例：1週間後にラップを外す" enterkeyhint="done" aria-label="リマインダーの内容">
-            <button class="btn mic" type="button" id="rmMic" hidden aria-pressed="false" aria-label="声で入力">🎤</button>
-          </div>
-          <div class="rm-preview" id="rmPreview" hidden>
-            <div class="what" id="rmWhat"></div>
-            <input type="datetime-local" id="rmWhen" aria-label="日時">
-            <div class="rm-row"><button class="btn primary" type="submit" id="rmAdd">カレンダーに登録</button><button class="btn" type="button" id="rmClear">やめる</button></div>
-          </div>
-          <div class="rm-msg" id="rmMsg"></div>
-        </form>
+        <div id="rmFormBox"></div>
         <ul class="rm-list" id="rmList"></ul>
         <h2 style="margin-top:14px">これからの天気 <small id="place"></small></h2>
         <div class="hours" id="hours"></div>
@@ -386,6 +379,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     document.body.classList.toggle("night", h >= 23 || h < 6);
     if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); refresh(); }
     else renderNext();
+    if (!DEMO && cfg && !photoIds.length && scenery !== null) showScenery();
   }
 
   // 画面をつけたままにする（対応している端末だけ）
@@ -566,11 +560,17 @@ input::placeholder { color: var(--muted); opacity: .8; }
     };
     img.src = url;
   }
-  function clearPhoto() { layers.forEach((l) => l.classList.remove("on")); $("home").classList.remove("hasphoto"); updateDotsTone(); }
+  // 写真が登録されていないときの絵（昼は明るい山なみ、夕方から朝は夕暮れ）
+  let scenery = null;
+  function showScenery() {
+    const h = new Date().getHours(), kind = h >= 6 && h < 16 ? 0 : 1;
+    if (scenery === kind) return;
+    scenery = kind; showPhoto(demoPhoto(kind));
+  }
   async function nextPhoto() {
     if (photoBusy) return;
     if (demoPhotos) { showPhoto(demoPhotos[photoFront]); return; }
-    if (!photoIds.length) { clearPhoto(); return; }
+    if (!photoIds.length) { showScenery(); return; }
     if (!photoOrder.length) photoOrder = photoIds.slice().sort(() => Math.random() - .5);
     const id = photoOrder.pop();
     photoBusy = true;
@@ -583,7 +583,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
   function setPhotos(ids) {
     const changed = ids.join() !== photoIds.join();
     photoIds = ids;
-    if (!ids.length) { clearInterval(photoTimer); photoTimer = null; clearPhoto(); store.set("ouchi.photo", null); return; }
+    if (!ids.length) { clearInterval(photoTimer); photoTimer = null; if (store.get("ouchi.photo")) store.set("ouchi.photo", null); showScenery(); return; }
+    scenery = null;
     if (changed) photoOrder = [];
     if (!photoTimer) { photoTimer = setInterval(nextPhoto, PHOTO_EVERY); nextPhoto(); }
   }
@@ -618,59 +619,83 @@ input::placeholder { color: var(--muted); opacity: .8; }
       .finally(() => { pendingChecks--; });
   }
 
-  /* ---------- リマインダー ---------- */
+  /* ---------- 入力欄（リマインダーと予定で共通） ---------- */
   const toLocalInput = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  let parsed = null;
-  function updatePreview() {
-    const text = $("rmText").value;
-    const msg = $("rmMsg"); msg.textContent = ""; msg.className = "rm-msg";
-    if (!text.trim()) { $("rmPreview").hidden = true; parsed = null; return; }
-    parsed = window.parseRemind(text);
-    $("rmPreview").hidden = false;
-    $("rmWhat").textContent = parsed.title || "（内容を入れてください）";
-    if (parsed.found) $("rmWhen").value = toLocalInput(parsed.start);
-    else if (!$("rmWhen").value) { const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); $("rmWhen").value = toLocalInput(t); }
-    if (!parsed.found) msg.textContent = "日時が読み取れなかったので、下で選んでください。";
-  }
-  $("rmText").addEventListener("input", updatePreview);
-  $("rmClear").addEventListener("click", () => { $("rmText").value = ""; $("rmWhen").value = ""; updatePreview(); });
-  $("rmForm").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    if (!parsed) { updatePreview(); if (!parsed) return; }
-    const title = parsed.title, when = new Date($("rmWhen").value);
-    const msg = $("rmMsg"); msg.className = "rm-msg";
-    if (!title) { msg.textContent = "内容を入れてください。"; msg.classList.add("err"); return; }
-    if (isNaN(when)) { msg.textContent = "日時を選んでください。"; msg.classList.add("err"); return; }
-    const label = `${dayStr(when)} ${hm(when)}「${title}」`;
-    if (DEMO) { msg.textContent = `登録しました（試し表示）：${label}`; return; }
-    $("rmAdd").disabled = true; msg.textContent = "登録しています…";
-    try {
-      const r = await callApi({ action: "remind", title, start: when.toISOString() });
-      if (!r.ok) throw new Error(r.error);
-      msg.textContent = `登録しました：${label}。その時刻に通知が届きます。`;
-      $("rmText").value = ""; $("rmPreview").hidden = true; parsed = null;
-      refresh();
-    } catch (e) { msg.textContent = "登録できませんでした：" + e.message; msg.classList.add("err"); }
-    finally { $("rmAdd").disabled = false; }
-  });
-
-  // 声で入力（使える端末だけボタンを出す。使えなければキーボードのマイクで）
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (SR) {
-    const mic = $("rmMic"); mic.hidden = false;
+  // kind: "rm"＝リマインダー、"ev"＝カレンダーの予定
+  function buildForm(kind, o) {
+    const form = el("form", "remember"); form.autocomplete = "off";
+    const text = el("input"); text.type = "text"; text.placeholder = o.placeholder; text.enterKeyHint = "done"; text.setAttribute("aria-label", o.label);
+    const mic = el("button", "btn mic", "🎤"); mic.type = "button"; mic.hidden = !SR; mic.setAttribute("aria-pressed", "false"); mic.setAttribute("aria-label", "声で入力");
+    const row1 = el("div", "rm-row"); row1.append(text, mic);
+    const what = el("div", "what");
+    const when = el("input"); when.type = "datetime-local"; when.setAttribute("aria-label", "日時");
+    const rowWhen = el("div", "rm-row"); rowWhen.append(when);
+    let allDay = null;
+    if (kind === "ev") {
+      allDay = el("input"); allDay.type = "checkbox";
+      const lab = el("label", "allday"); lab.append(allDay, "終日"); rowWhen.append(lab);
+    }
+    const add = el("button", "btn primary", o.button); add.type = "submit";
+    const clear = el("button", "btn", "やめる"); clear.type = "button";
+    const row2 = el("div", "rm-row"); row2.append(add, clear);
+    const preview = el("div", "rm-preview"); preview.hidden = true; preview.append(what, rowWhen, row2);
+    const msg = el("div", "rm-msg"); msg.id = kind + "Msg";
+    form.append(row1, preview, msg); $(kind + "FormBox").append(form);
+
+    let parsed = null;
+    function update() {
+      msg.textContent = ""; msg.className = "rm-msg";
+      if (!text.value.trim()) { preview.hidden = true; parsed = null; return; }
+      parsed = window.parseRemind(text.value);
+      preview.hidden = false;
+      what.textContent = parsed.title || "（内容を入れてください）";
+      if (parsed.found) { when.value = toLocalInput(parsed.start); if (allDay) allDay.checked = !parsed.timeGiven; }
+      else {
+        if (!when.value) { const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); when.value = toLocalInput(t); }
+        msg.textContent = "日時が読み取れなかったので、下で選んでください。";
+      }
+    }
+    text.addEventListener("input", update);
+    clear.addEventListener("click", () => { text.value = ""; when.value = ""; update(); });
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (!parsed) { update(); if (!parsed) return; }
+      const title = parsed.title, d = new Date(when.value), isAllDay = !!(allDay && allDay.checked);
+      msg.className = "rm-msg";
+      if (!title) { msg.textContent = "内容を入れてください。"; msg.classList.add("err"); return; }
+      if (isNaN(d)) { msg.textContent = "日時を選んでください。"; msg.classList.add("err"); return; }
+      const label = `${dayStr(d)}${isAllDay ? "" : " " + hm(d)}「${title}」`;
+      if (DEMO) { msg.textContent = `登録しました（試し表示）：${label}`; return; }
+      add.disabled = true; msg.textContent = "登録しています…";
+      try {
+        const q = kind === "rm" ? { action: "remind", title, start: d.toISOString() }
+          : { action: "event", title, start: d.toISOString(), allday: isAllDay ? "1" : "0", date: ymd(d) };
+        const r = await callApi(q);
+        if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
+        msg.textContent = `登録しました：${label}` + (kind === "rm" ? "。その時刻に通知が届きます。" : "");
+        text.value = ""; when.value = ""; preview.hidden = true; parsed = null;
+        refresh();
+      } catch (e) { msg.textContent = "登録できませんでした：" + e.message; msg.classList.add("err"); }
+      finally { add.disabled = false; }
+    });
+
+    // 声で入力（使える端末だけボタンが出る。使えなければキーボードのマイクで）
     let rec = null;
     mic.addEventListener("click", () => {
       if (rec) { rec.stop(); return; }
       try {
         rec = new SR(); rec.lang = "ja-JP"; rec.interimResults = true; rec.continuous = false;
-        const base = $("rmText").value ? $("rmText").value + " " : "";
-        rec.onresult = (e) => { let t = ""; for (const r of e.results) t += r[0].transcript; $("rmText").value = base + t; updatePreview(); };
-        rec.onerror = (e) => { $("rmMsg").textContent = e.error === "not-allowed" ? "マイクが許可されていません。キーボードのマイクボタンでも入力できます。" : "うまく聞き取れませんでした。キーボードのマイクボタンでも入力できます。"; };
+        const base = text.value ? text.value + " " : "";
+        rec.onresult = (e) => { let t = ""; for (const r of e.results) t += r[0].transcript; text.value = base + t; update(); };
+        rec.onerror = (e) => { msg.textContent = e.error === "not-allowed" ? "マイクが許可されていません。キーボードのマイクボタンでも入力できます。" : "うまく聞き取れませんでした。キーボードのマイクボタンでも入力できます。"; };
         rec.onend = () => { rec = null; mic.setAttribute("aria-pressed", "false"); };
         rec.start(); mic.setAttribute("aria-pressed", "true");
-      } catch (e) { rec = null; $("rmMsg").textContent = "この画面では声の入力が使えません。キーボードのマイクボタンを使ってください。"; }
+      } catch (e) { rec = null; msg.textContent = "この画面では声の入力が使えません。キーボードのマイクボタンを使ってください。"; }
     });
   }
+  buildForm("rm", { placeholder: "例：1週間後にラップを外す", label: "リマインダーの内容", button: "リマインダーに登録" });
+  buildForm("ev", { placeholder: "例：あさって15時 歯医者", label: "予定の内容", button: "カレンダーに登録" });
 
   /* ---------- 試し表示（?demo=1 写真なしは &photo=0） ---------- */
   function demoPhoto(seed) {
@@ -714,7 +739,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
   if (!cfg) { showSetup(false); return; }
   showBoard(); tick(); render();
-  const lastPhoto = store.get("ouchi.photo"); if (lastPhoto) showPhoto(lastPhoto);
+  const lastPhoto = store.get("ouchi.photo"); if (lastPhoto) showPhoto(lastPhoto); else showScenery();
   refresh(); setInterval(refresh, 5 * 60 * 1000);
 })();
 </script>

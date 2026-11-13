@@ -75,6 +75,7 @@ function doGet(e) {
       case 'check': return json_(check_(p.date, p.id, p.on === '1'));
       case 'remind': return json_(remind_(p.title, p.start, Number(p.minutes || 30)));
       case 'done': return json_(remindDone_(p.id));
+      case 'event': return json_(event_(p.title, p.start, p.allday === '1', p.date));
       case 'photo': return json_(photo_(p.id));
       case 'ping': return json_({ ok: true });
       default: return json_({ ok: false, error: 'unknown_action' });
@@ -353,4 +354,22 @@ function remindDone_(id) {
   if (!ev) throw new Error('リマインダーが見つかりません');
   ev.deleteEvent();
   return { ok: true };
+}
+
+/* ---------- 予定の追加（メインのカレンダー） ---------- */
+
+function event_(title, startIso, allDay, date) {
+  title = String(title || '').trim();
+  if (!title) throw new Error('内容が空です');
+  const cal = CalendarApp.getDefaultCalendar();
+  if (allDay) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw new Error('日付が読めません');
+    // 正午を渡して、時差で日付がずれないようにする
+    cal.createAllDayEvent(title, new Date(date + 'T12:00:00+09:00'));
+  } else {
+    const start = new Date(startIso);
+    if (isNaN(start)) throw new Error('日時が読めません');
+    cal.createEvent(title, start, new Date(start.getTime() + 60 * 60000));
+  }
+  return { ok: true, title: title };
 }
