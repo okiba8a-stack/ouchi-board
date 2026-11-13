@@ -139,7 +139,7 @@ function getEvents_(date) {
   return out;
 }
 
-/** 「覚えておいて」：通知つきの予定をメインのカレンダーに作る */
+/** 「リマインダー」：通知つきの予定をメインのカレンダーに作る */
 function remind_(title, startIso, minutes) {
   title = String(title || '').trim();
   if (!title) throw new Error('内容が空です');

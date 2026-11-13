@@ -206,10 +206,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <ul class="chk-list" id="routines"><li class="empty">読み込み中…</li></ul>
       </div>
       <div class="col c3">
-        <h2>覚えておいて</h2>
+        <h2>リマインダー</h2>
         <form class="remember" id="rmForm" autocomplete="off">
           <div class="rm-row">
-            <input type="text" id="rmText" placeholder="1週間後にパンチェッタのラップを外す" enterkeyhint="done" aria-label="覚えておいてほしいこと">
+            <input type="text" id="rmText" placeholder="1週間後にパンチェッタのラップを外す" enterkeyhint="done" aria-label="リマインダーの内容">
             <button class="btn mic" type="button" id="rmMic" hidden aria-pressed="false" aria-label="声で入力">🎤</button>
           </div>
           <div class="rm-preview" id="rmPreview" hidden>
@@ -588,7 +588,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       .finally(() => { pendingChecks--; });
   }
 
-  /* ---------- 覚えておいて ---------- */
+  /* ---------- リマインダー ---------- */
   const toLocalInput = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   let parsed = null;
   function updatePreview() {
