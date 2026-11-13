@@ -100,5 +100,6 @@
   }
 
   root.parseRemind = parseRemind;
+  root.normalizeJa = normalize;
   if (typeof module !== "undefined") module.exports = { parseRemind, normalize };
 })(typeof window !== "undefined" ? window : globalThis);
