@@ -213,6 +213,18 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .ev .time { font-size: 20px; }
 .news-list li::before { color: var(--accent); }
 
+/* 長押しで開く編集の窓 */
+.ev, .rm-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.ev.hold, .rm-item.hold { background: var(--soft); border-radius: 10px; }
+.sheet-bg { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.5); display: grid; place-items: center; padding: 20px;
+  --ink: #fff; --muted: rgba(255,255,255,.66); --line: rgba(255,255,255,.15); --soft: rgba(255,255,255,.14); --accent: #bfe3cc; --accent-ink: #14261c; --warn: #ffb59a; color: #fff; color-scheme: dark; }
+.sheet { width: min(480px, 100%); background: #24272d; border: 1px solid rgba(255,255,255,.14); border-radius: 26px; padding: 24px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+.sheet .rm-row { flex-wrap: wrap; }
+.sheet input[type=text] { width: 100%; font-size: 19px; }
+.sheet .spacer { flex: 1; }
+.btn.danger { color: var(--warn); }
+.btn.danger.sure { color: #2a0f06; background: var(--warn); }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -301,6 +313,16 @@ input::placeholder { color: var(--muted); opacity: .8; }
     </div></div>
   </section>
 </main>
+
+<div class="sheet-bg" id="sheetBg" hidden>
+  <form class="sheet" id="sheet" autocomplete="off">
+    <h2 id="shHead"></h2>
+    <input type="text" id="shTitle" aria-label="内容" enterkeyhint="done">
+    <div class="rm-row"><input type="datetime-local" id="shWhen" aria-label="日時"><label class="allday" id="shAllWrap"><input type="checkbox" id="shAll">終日</label></div>
+    <p class="rm-msg" id="shMsg"></p>
+    <div class="rm-row"><button class="btn primary" type="submit" id="shSave">保存</button><button class="btn" type="button" id="shCancel">やめる</button><span class="spacer"></span><button class="btn danger" type="button" id="shDel">削除</button></div>
+  </form>
+</div>
 
 <nav class="dots" id="dots" hidden aria-label="画面の切り替え">
   <button type="button" aria-label="時計" aria-current="true"></button>
@@ -567,6 +589,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       const b = el("button", "done"); b.type = "button"; b.setAttribute("aria-pressed", String(!!r.done)); b.setAttribute("aria-label", `「${r.title}」のチェック`);
       b.addEventListener("click", () => markReminder(r));
       li.append(el("div", "time", (ymd(s) === today ? "きょう" : dayStr(s)) + String.fromCharCode(10) + hm(s)), el("div", "ttl", r.title), b);
+      attachHold(li, { kind: "rm", e: r, s, allDay: false });
       ul.append(li);
     });
   }
@@ -589,6 +612,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       li.append(el("div", "time" + (allDay ? " allday" : ""), allDay ? "終日" : hm(s)));
       const body = el("div"); body.append(el("div", "ttl", e.title || "（タイトルなし）"));
       if (e.location) body.append(el("div", "loc", e.location));
+      attachHold(li, { kind: "ev", e, s, allDay });
       li.append(body); todayUl.append(li);
     });
     if (!uEv.length) upUl.append(el("li", "empty", "予定はありません。"));
@@ -596,6 +620,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       const li = el("li", "ev");
       li.append(el("div", "time", dayStr(s) + (allDay ? "" : "\n" + hm(s))));
       const body = el("div"); body.append(el("div", "ttl", e.title || "（タイトルなし）"));
+      attachHold(li, { kind: "ev", e, s, allDay });
       li.append(body); upUl.append(li);
     });
     if (data.at) $("calState").textContent = `${hm(new Date(data.at))} 取得`;
@@ -808,8 +833,70 @@ input::placeholder { color: var(--muted); opacity: .8; }
       .finally(() => { pendingChecks--; });
   }
 
-  /* ---------- 入力欄（リマインダーと予定で共通） ---------- */
+  /* ---------- 長押しで編集・削除 ---------- */
   const toLocalInput = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function attachHold(li, item) {
+    let timer = null, x = 0, y = 0;
+    const cancel = () => { clearTimeout(timer); timer = null; li.classList.remove("hold"); };
+    li.addEventListener("pointerdown", (e) => {
+      x = e.clientX; y = e.clientY; li.classList.add("hold");
+      timer = setTimeout(() => {
+        cancel(); sw = null;   // スワイプ扱いにしない
+        // 指を離したときのタップ（チェックなど）を1回だけ無効にする
+        const eat = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        addEventListener("click", eat, { capture: true, once: true });
+        setTimeout(() => removeEventListener("click", eat, { capture: true }), 700);
+        openSheet(item);
+      }, 550);
+    });
+    li.addEventListener("pointermove", (e) => { if (timer && Math.hypot(e.clientX - x, e.clientY - y) > 8) cancel(); });
+    ["pointerup", "pointercancel", "pointerleave"].forEach((t) => li.addEventListener(t, cancel));
+    li.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+  let sheetItem = null;
+  function openSheet(item) {
+    sheetItem = item;
+    const isEv = item.kind === "ev", e = item.e, msg = $("shMsg");
+    let why = "";
+    if (DEMO) why = "";
+    else if (!e.id) why = "編集には裏方（Apps Script）の更新が必要です。";
+    else if (isEv && e.recurring) why = "くり返しの予定は、Googleカレンダーで変更してください。";
+    else if (isEv && e.editable === false) why = "このカレンダーの予定は変更できません。";
+    $("shHead").textContent = isEv ? "予定" : "リマインダー";
+    $("shTitle").value = e.title || ""; $("shWhen").value = toLocalInput(item.s);
+    $("shAllWrap").hidden = !isEv; $("shAll").checked = !!item.allDay;
+    msg.textContent = why; msg.className = "rm-msg";
+    ["shTitle", "shWhen", "shAll", "shSave", "shDel"].forEach((id) => { $(id).disabled = !!why; });
+    $("shDel").classList.remove("sure"); $("shDel").textContent = "削除";
+    $("sheetBg").hidden = false;
+  }
+  function closeSheet() { $("sheetBg").hidden = true; sheetItem = null; document.activeElement && document.activeElement.blur(); }
+  $("shCancel").addEventListener("click", closeSheet);
+  $("sheetBg").addEventListener("pointerdown", (e) => { if (e.target === $("sheetBg")) closeSheet(); });
+  async function sheetCall(q, doneText) {
+    const msg = $("shMsg"); msg.className = "rm-msg";
+    if (DEMO) { msg.textContent = "試し表示では変更できません。"; return; }
+    $("shSave").disabled = $("shDel").disabled = true; msg.textContent = doneText;
+    try {
+      const e = sheetItem.e;
+      const r = await callApi({ ...q, kind: sheetItem.kind, id: e.id, cal: e.cal || "" });
+      if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
+      closeSheet(); refresh();
+    } catch (err) { msg.textContent = "できませんでした：" + err.message; msg.classList.add("err"); $("shSave").disabled = $("shDel").disabled = false; }
+  }
+  $("sheet").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const title = $("shTitle").value.trim(), d = new Date($("shWhen").value), msg = $("shMsg");
+    if (!title || isNaN(d)) { msg.textContent = "内容と日時を入れてください。"; msg.className = "rm-msg err"; return; }
+    sheetCall({ action: "edit", title, start: d.toISOString(), allday: $("shAll").checked && sheetItem.kind === "ev" ? "1" : "0", date: ymd(d) }, "保存しています…");
+  });
+  $("shDel").addEventListener("click", () => {
+    const b = $("shDel");
+    if (!b.classList.contains("sure")) { b.classList.add("sure"); b.textContent = "本当に削除"; return; }   // 2回押しで削除
+    sheetCall({ action: "delete" }, "削除しています…");
+  });
+
+  /* ---------- 入力欄（リマインダーと予定で共通） ---------- */
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   // kind: "rm"＝リマインダー、"ev"＝カレンダーの予定
   function buildForm(kind, o) {
@@ -924,6 +1011,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     $("statusText").textContent = "試し表示";
     if (params.get("photo") !== "0") { demoPhotos = [demoPhoto(1), demoPhoto(0)]; nextWall(); setInterval(nextWall, 8000); }
     const p = Number(params.get("page")); if (p) goTo(p, true);
+    if (params.get("sheet") === "1") { const e = data.events[0]; openSheet({ kind: "ev", e, s: new Date(e.start), allDay: false }); }   // 確認用
     return;
   }
   if (!cfg) { showSetup(false); return; }

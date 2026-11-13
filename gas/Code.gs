@@ -76,6 +76,8 @@ function doGet(e) {
       case 'remind': return json_(remind_(p.title, p.start, Number(p.minutes || 30)));
       case 'mark': return json_(remindMark_(p.id, p.on === '1'));
       case 'scenic': return json_(scenic_());
+      case 'edit': return json_(editItem_(p));
+      case 'delete': return json_(deleteItem_(p));
       case 'event': return json_(event_(p.title, p.start, p.allday === '1', p.date));
       case 'photo': return json_(photo_(p.id));
       case 'ping': return json_({ ok: true });
@@ -156,6 +158,10 @@ function getEvents_(date) {
         end: allDay ? Utilities.formatDate(en, TZ, 'yyyy-MM-dd') : en.toISOString(),
         location: ev.getLocation() || '',
         calendar: cal.getName(),
+        id: ev.getId(),
+        cal: cal.getId(),
+        recurring: ev.isRecurringEvent(),
+        editable: cal.isOwnedByMe(),
       });
     });
   });
@@ -447,4 +453,43 @@ function scenic_() {
   const out = { ok: true, images: images };
   cache.put('scenic', JSON.stringify(out), 6 * 60 * 60);
   return out;
+}
+
+/* ---------- 予定・リマインダーの編集と削除（ボードの長押しから） ---------- */
+
+/** 対象の予定を探す。くり返しの予定と、自分のものでないカレンダーは触らない */
+function findItem_(p) {
+  let cal;
+  if (p.kind === 'rm') cal = getReminderCal_(false);
+  else {
+    cal = p.cal ? CalendarApp.getCalendarById(p.cal) : null;
+    if (cal && !cal.isOwnedByMe()) throw new Error('このカレンダーの予定は変更できません');
+  }
+  const ev = cal && p.id ? cal.getEventById(p.id) : null;
+  if (!ev) throw new Error('予定が見つかりません');
+  if (ev.isRecurringEvent()) throw new Error('くり返しの予定は Google カレンダーで変更してください');
+  return ev;
+}
+
+function editItem_(p) {
+  const ev = findItem_(p);
+  const title = String(p.title || '').trim();
+  if (!title) throw new Error('内容が空です');
+  if (p.allday === '1' && p.kind !== 'rm') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date || '')) throw new Error('日付が読めません');
+    ev.setAllDayDate(new Date(p.date + 'T12:00:00+09:00'));
+  } else {
+    const start = new Date(p.start);
+    if (isNaN(start)) throw new Error('日時が読めません');
+    // 長さはそのまま保つ（終日だった予定は1時間にする）
+    const len = ev.isAllDayEvent() ? 60 * 60000 : ev.getEndTime().getTime() - ev.getStartTime().getTime();
+    ev.setTime(start, new Date(start.getTime() + len));
+  }
+  ev.setTitle(title);
+  return { ok: true };
+}
+
+function deleteItem_(p) {
+  findItem_(p).deleteEvent();
+  return { ok: true };
 }
