@@ -76,6 +76,7 @@ function doGet(e) {
       case 'remind': return json_(remind_(p.title, p.start, Number(p.minutes || 30)));
       case 'mark': return json_(remindMark_(p.id, p.on === '1'));
       case 'scenic': return json_(scenic_());
+      case 'photoDelete': return json_(photoDelete_(p.id));
       case 'edit': return json_(editItem_(p));
       case 'delete': return json_(deleteItem_(p));
       case 'event': return json_(event_(p.title, p.start, p.allday === '1', p.date));
@@ -98,6 +99,7 @@ function doPost(e) {
     switch (p.action) {
       case 'upload': return json_(upload_(p.name, p.data));
       case 'routines': return json_(saveRoutines_(p.list));
+      case 'photoOrder': return json_(photoOrder_(p.ids));
       default: return json_({ ok: false, error: 'unknown_action' });
     }
   } catch (err) {
@@ -317,8 +319,13 @@ function getPhotoIds_() {
       if (String(f.getMimeType()).indexOf('image/') === 0) ids.push(f.getId());
     }
   }
-  cache.put('photos', JSON.stringify(ids), 10 * 60);
-  return ids;
+  // ボードで決めた並び順に並べる。順番が決まっていない写真（新しく入れたもの）は後ろへ
+  let order = [];
+  try { order = JSON.parse(PropertiesService.getScriptProperties().getProperty('PHOTO_ORDER') || '[]'); } catch (e) { order = []; }
+  const rank = (id) => { const i = order.indexOf(id); return i < 0 ? order.length : i; };
+  const sorted = ids.map((id, i) => [id, rank(id), i]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map((x) => x[0]);
+  cache.put('photos', JSON.stringify(sorted), 10 * 60);
+  return sorted;
 }
 
 /** 写真1枚を、画面に合う大きさ（長辺1600px）の画像データで返す */
@@ -491,5 +498,22 @@ function editItem_(p) {
 
 function deleteItem_(p) {
   findItem_(p).deleteEvent();
+  return { ok: true };
+}
+
+/* ---------- 写真の並びかえと削除（ボードの設定の画面から） ---------- */
+
+function photoOrder_(ids) {
+  if (!Array.isArray(ids)) throw new Error('一覧が正しくありません');
+  PropertiesService.getScriptProperties().setProperty('PHOTO_ORDER', JSON.stringify(ids.slice(0, 300).map(String)));
+  CacheService.getScriptCache().remove('photos');
+  return { ok: true, photos: getPhotoIds_() };
+}
+
+/** 写真フォルダの中の写真だけ、ドライブのゴミ箱に入れる（30日間は元に戻せる） */
+function photoDelete_(id) {
+  if (getPhotoIds_().indexOf(id) < 0) throw new Error('写真が見つかりません');
+  DriveApp.getFileById(id).setTrashed(true);
+  CacheService.getScriptCache().remove('photos');
   return { ok: true };
 }

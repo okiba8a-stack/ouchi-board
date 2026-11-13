@@ -229,6 +229,11 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .sheet .hours .p { color: #a9cdf5; }
 .sheet input[type=time] { font-family: var(--font-num); font-weight: 200; font-size: 56px; color: var(--ink); background: transparent; border: 0; border-bottom: 1px solid var(--muted); padding: 4px 2px; min-height: 80px; width: 100%; }
 .ring-time { font-family: var(--font-num); font-weight: 200; font-size: 96px; line-height: 1; text-align: center; }
+.ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+.ph img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; background: var(--soft); display: block; }
+.ph-btns { display: flex; justify-content: space-between; margin-top: 4px; }
+.ph-btns button { font: inherit; font-size: 13px; min-width: 32px; height: 32px; border-radius: 16px; border: 0; background: var(--soft); color: var(--ink); cursor: pointer; padding: 0 6px; }
+.ph-btns .del.sure { background: var(--warn); color: #2a0f06; }
 /* 長押しで開く編集の窓 */
 .ev, .rm-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .ev.hold, .rm-item.hold { background: var(--soft); border-radius: 10px; }
@@ -317,6 +322,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <input type="file" id="photoFile" accept="image/*" multiple hidden>
         <div class="rm-row"><button class="btn" type="button" id="photoAdd">写真を選ぶ</button></div>
         <p class="rm-msg" id="photoMsg"></p>
+        <div class="ph-grid" id="phGrid"></div>
       </div>
       <div class="col wide">
         <h2>ルーティン</h2>
@@ -712,7 +718,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   function render() { renderWeather(); renderCalendar(); renderReminders(); if (!rtDraft) renderRtEditor(); renderRoutines(); renderNews(); }
 
   /* ---------- 壁紙（自分の写真／山なみ／世界の絶景） ---------- */
-  let photoIds = [], photoOrder = [], photoFront = 0, wallBusy = false, demoPhotos = null, shown = null;
+  let photoIds = [], photoIdx = 0, photoFront = 0, wallBusy = false, demoPhotos = null, shown = null;
   let world = [], worldAt = 0, worldIdx = 0;
   let wallMode = store.get("ouchi.wall") || "photos";
   const layers = [$("photoA"), $("photoB")];
@@ -749,10 +755,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
         }
         if (world.length) { const w = world[worldIdx++ % world.length]; showPhoto(w.url, w.caption, w.url); return; }
       } else if (wallMode === "photos" && photoIds.length) {
-        if (!photoOrder.length) photoOrder = photoIds.slice().sort(() => Math.random() - .5);
-        const id = photoOrder.pop();
-        const r = await callApi({ action: "photo", id });
-        if (r.ok && r.data) { showPhoto(r.data, "", id); if (r.data.length < 900000) store.set("ouchi.photo", r.data); return; }
+        const id = photoIds[photoIdx++ % photoIds.length];
+        const url = await getPhoto(id);
+        if (url) { showPhoto(url, "", id); getPhoto(photoIds[photoIdx % photoIds.length]); return; }   // 次の1枚も先に用意しておく
         if (shown) return;
       }
       showScenery();
@@ -764,9 +769,89 @@ input::placeholder { color: var(--muted); opacity: .8; }
     photoIds = ids;
     $("photoCount").textContent = `いま ${ids.length} 枚`;
     if (!changed) return;
-    photoOrder = [];
-    if (!ids.length && store.get("ouchi.photo")) store.set("ouchi.photo", null);
+    photoIdx = 0; renderPhotoGrid();
     if (wallMode === "photos") nextWall();
+    prefetchPhotos();
+  }
+
+  /* ---------- 写真の置き場（この端末の中） ---------- */
+  let idb = null;
+  function openIdb() {
+    if (idb) return idb;
+    idb = new Promise((resolve) => {
+      try {
+        const rq = indexedDB.open("ouchi", 1);
+        rq.onupgradeneeded = () => rq.result.createObjectStore("photos");
+        rq.onsuccess = () => resolve(rq.result); rq.onerror = () => resolve(null);
+      } catch (e) { resolve(null); }
+    });
+    return idb;
+  }
+  async function idbDo(mode, fn) {
+    const db = await openIdb(); if (!db) return null;
+    return new Promise((resolve) => {
+      try { const rq = fn(db.transaction("photos", mode).objectStore("photos")); rq.onsuccess = () => resolve(rq.result); rq.onerror = () => resolve(null); }
+      catch (e) { resolve(null); }
+    });
+  }
+  const photoWait = {};   // 同じ写真を二重に取りに行かない
+  function getPhoto(id) {
+    if (!id) return Promise.resolve(null);
+    if (photoWait[id]) return photoWait[id];
+    photoWait[id] = (async () => {
+      const hit = await idbDo("readonly", (st) => st.get(id));
+      if (hit) return hit;
+      try {
+        const r = await callApi({ action: "photo", id });
+        if (r.ok && r.data) { await idbDo("readwrite", (st) => st.put(r.data, id)); return r.data; }
+      } catch (e) {}
+      return null;
+    })();
+    photoWait[id].then((v) => { if (!v) delete photoWait[id]; });
+    return photoWait[id];
+  }
+  // まだ端末にない写真を、1枚ずつ先に取っておく。一覧から消えた写真は端末からも消す
+  let prefetching = false;
+  async function prefetchPhotos() {
+    if (prefetching || DEMO) return;
+    prefetching = true;
+    try {
+      const keys = (await idbDo("readonly", (st) => st.getAllKeys())) || [];
+      for (const k of keys) if (!photoIds.includes(k)) { await idbDo("readwrite", (st) => st.delete(k)); delete photoWait[k]; }
+      for (const id of photoIds.slice()) await getPhoto(id);
+    } finally { prefetching = false; }
+  }
+
+  /* ---------- 写真の一覧（並べかえ・削除） ---------- */
+  let orderTimer = null;
+  function saveOrder() {
+    clearTimeout(orderTimer);
+    orderTimer = setTimeout(async () => {
+      try { await callPost({ action: "photoOrder", ids: photoIds }); if (data) { data.photos = photoIds.slice(); store.set("ouchi.last", data); } }
+      catch (e) { $("photoMsg").textContent = "並び順を保存できませんでした：" + e.message; }
+    }, 800);
+  }
+  function renderPhotoGrid() {
+    const grid = $("phGrid"); grid.textContent = "";
+    photoIds.forEach((id, i) => {
+      const cell = el("div", "ph"), img = el("img"); img.alt = `写真 ${i + 1}`;
+      getPhoto(id).then((u) => { if (u) img.src = u; });
+      const mk = (txt, label, fn, cls) => { const b = el("button", cls || null, txt); b.type = "button"; b.setAttribute("aria-label", label); b.addEventListener("click", fn); return b; };
+      const move = (d) => () => { const j = i + d; if (j < 0 || j >= photoIds.length) return; [photoIds[i], photoIds[j]] = [photoIds[j], photoIds[i]]; photoIdx = 0; renderPhotoGrid(); saveOrder(); };
+      const del = mk("×", "この写真を削除", async () => {
+        if (!del.classList.contains("sure")) { del.classList.add("sure"); del.textContent = "削除"; setTimeout(() => { del.classList.remove("sure"); del.textContent = "×"; }, 3000); return; }   // 2回押しで削除
+        del.disabled = true;
+        try {
+          const r = await callApi({ action: "photoDelete", id });
+          if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
+          await idbDo("readwrite", (st) => st.delete(id));
+          setPhotos(photoIds.filter((x) => x !== id)); if (data) data.photos = photoIds.slice();
+          if (!photoIds.length && wallMode === "photos") nextWall();
+        } catch (e) { $("photoMsg").textContent = "削除できませんでした：" + e.message; del.disabled = false; }
+      }, "del");
+      const row = el("div", "ph-btns"); row.append(mk("◀", "前へ", move(-1)), mk("▶", "後ろへ", move(1)), del);
+      cell.append(img, row); grid.append(cell);
+    });
   }
   // 時計の画面：天気→くわしい天気、時計→アラーム、予定→予定の画面、それ以外→次の写真
   $("home").addEventListener("click", (e) => {
@@ -809,7 +894,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
     try {
       for (const f of files) {
         msg.textContent = `${ok + 1} / ${files.length} 枚目を送っています…`;
-        await callPost({ action: "upload", name: f.name.replace(/\.[^.]+$/, "") + ".jpg", data: await shrink(f) });
+        const b64 = await shrink(f);
+        const up = await callPost({ action: "upload", name: f.name.replace(/\.[^.]+$/, "") + ".jpg", data: b64 });
+        if (up.id) await idbDo("readwrite", (st) => st.put("data:image/jpeg;base64," + b64, up.id));
         ok++;
       }
       msg.textContent = `${ok} 枚追加しました。`;
@@ -1165,8 +1252,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
   if (!cfg) { showSetup(false); return; }
   showBoard(); tick(); render();
-  const lastPhoto = store.get("ouchi.photo");
-  if (wallMode === "photos" && lastPhoto) showPhoto(lastPhoto, "", "cached"); else if (wallMode === "world") nextWall(); else showScenery();
+  try { localStorage.removeItem("ouchi.photo"); } catch (e) {}
+  setPhotos((data && data.photos) || []);   // 前回の一覧と端末内の写真で、通信を待たずに表示する
+  if (wallMode !== "photos" || !photoIds.length) nextWall();
   setInterval(nextWall, PHOTO_EVERY);
   refresh(); setInterval(refresh, 5 * 60 * 1000);
 })();
