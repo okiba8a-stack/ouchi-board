@@ -152,8 +152,22 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .rm-item.due .time { color: var(--warn); }
 .rm-item .ttl { font-size: 17px; overflow-wrap: anywhere; }
 .rm-item .done { width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
-.rm-item .done::before { content: ""; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--muted); }
-.rm-item .done:active::before { background: var(--accent); border-color: var(--accent); }
+.rm-item .done::before { content: ""; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--muted); transition: background .2s, border-color .2s; }
+.rm-item .done[aria-pressed="true"]::before { background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center/16px no-repeat; border-color: var(--accent); }
+.rm-item.checked .ttl { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
+.credit { position: absolute; right: var(--pad-r); bottom: max(14px, env(safe-area-inset-bottom)); font-size: 11px; color: #fff; opacity: .7; text-shadow: 0 1px 6px rgba(0,0,0,.6); max-width: 46%; text-align: right; }
+.cols .wide { grid-column: span 2; }
+@media (max-width: 1000px) { .cols .wide { grid-column: 1 / -1; } }
+.seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.seg .btn[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); }
+.note { margin: 0; font-size: 13px; color: var(--muted); }
+.rt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rt { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rt input[type=text] { flex: 1 1 160px; min-width: 0; }
+.rt .days { display: flex; gap: 4px; }
+.rt .days button, .rt .del { font: inherit; font-size: 14px; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: none; color: var(--muted); cursor: pointer; padding: 0; }
+.rt .days button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.rt .del { border: 0; font-size: 20px; }
 .allday { display: flex; align-items: center; gap: 8px; font-size: 15px; white-space: nowrap; }
 .allday input { width: 22px; height: 22px; accent-color: var(--accent); }
 .rm-msg { font-size: 13px; color: var(--muted); min-height: 1em; }
@@ -191,7 +205,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 
 <main class="pager" id="pager" hidden>
   <section class="page home" id="home" aria-label="時計と天気">
-    <div class="photo" id="photoA"></div><div class="photo" id="photoB"></div><div class="scrim"></div>
+    <div class="photo" id="photoA"></div><div class="photo" id="photoB"></div><div class="scrim"></div><div class="credit" id="credit"></div>
     <div class="home-inner">
       <div class="wx" id="wx"></div>
       <div>
@@ -232,7 +246,33 @@ input::placeholder { color: var(--muted); opacity: .8; }
     <div class="page-inner"><div class="news-wrap">
       <h2>ニュース</h2>
       <ul class="news-list" id="news"><li class="empty">読み込み中…</li></ul>
-      <div class="foot"><span id="statusText"></span><button type="button" id="openSetup">設定</button></div>
+      <div class="foot"><span id="statusText"></span><button type="button" id="toSettings">設定</button></div>
+    </div></div>
+  </section>
+
+  <section class="page" aria-label="設定">
+    <div class="page-inner"><div class="cols">
+      <div class="col">
+        <h2>壁紙</h2>
+        <div class="seg" id="wallSeg">
+          <button class="btn" type="button" data-wall="photos">自分の写真</button>
+          <button class="btn" type="button" data-wall="scenery">山なみ</button>
+          <button class="btn" type="button" data-wall="world">世界の絶景</button>
+        </div>
+        <p class="note" id="wallNote"></p>
+        <h2 style="margin-top:14px">写真を追加 <small id="photoCount"></small></h2>
+        <input type="file" id="photoFile" accept="image/*" multiple hidden>
+        <div class="rm-row"><button class="btn" type="button" id="photoAdd">写真を選ぶ</button></div>
+        <p class="rm-msg" id="photoMsg"></p>
+      </div>
+      <div class="col wide">
+        <h2>ルーティン</h2>
+        <ul class="rt-list" id="rtList"></ul>
+        <div class="rm-row"><button class="btn" type="button" id="rtAdd">＋ 追加</button><button class="btn primary" type="button" id="rtSave">保存</button></div>
+        <p class="rm-msg" id="rtMsg"></p>
+        <h2 style="margin-top:14px">接続</h2>
+        <div class="rm-row"><button class="btn" type="button" id="openSetup">接続の設定</button></div>
+      </div>
     </div></div>
   </section>
 </main>
@@ -241,6 +281,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <button type="button" aria-label="時計" aria-current="true"></button>
   <button type="button" aria-label="予定とルーティン"></button>
   <button type="button" aria-label="ニュース"></button>
+  <button type="button" aria-label="設定"></button>
 </nav>
 
 <script src="remind-parse.js"></script>
@@ -293,6 +334,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   });
   $("cfgCancel").addEventListener("click", showBoard);
   $("openSetup").addEventListener("click", () => showSetup(true));
+  $("toSettings").addEventListener("click", () => goTo(3));
 
   /* ---------- 裏方（Apps Script）を呼ぶ ---------- */
   async function callApi(q, c) {
@@ -307,11 +349,21 @@ input::placeholder { color: var(--muted); opacity: .8; }
     } finally { clearTimeout(timer); }
   }
 
+  // 大きなデータは POST で送る（ヘッダーを付けないので、事前確認なしで届く）
+  async function callPost(obj) {
+    const res = await fetch(cfg.api, { method: "POST", body: JSON.stringify({ ...obj, key: cfg.key }), redirect: "follow" });
+    if (!res.ok) throw new Error("通信エラー " + res.status);
+    const r = await res.json();
+    if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
+    return r;
+  }
+
   /* ---------- ページ送り ---------- */
   const pager = $("pager"), dots = [...$("dots").children];
   let page = 0;
+  const LAST = 3;
   function goTo(i, instant) {
-    page = Math.max(0, Math.min(2, i));
+    page = Math.max(0, Math.min(LAST, i));
     if (instant) { pager.classList.add("drag"); requestAnimationFrame(() => requestAnimationFrame(() => pager.classList.remove("drag"))); }
     pager.style.setProperty("--x", `${-page * 100}%`);
     dots.forEach((d, k) => d.setAttribute("aria-current", String(k === page)));
@@ -338,7 +390,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       sw.on = true; pager.classList.add("drag");
       try { pager.setPointerCapture(e.pointerId); } catch (err) {}
     }
-    const edge = (page === 0 && dx > 0) || (page === 2 && dx < 0);
+    const edge = (page === 0 && dx > 0) || (page === LAST && dx < 0);
     sw.dx = edge ? dx * .25 : dx;
     pager.style.setProperty("--x", `calc(${-page * 100}% + ${sw.dx}px)`);
   });
@@ -378,8 +430,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const h = d.getHours();
     document.body.classList.toggle("night", h >= 23 || h < 6);
     if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); refresh(); }
-    else renderNext();
-    if (!DEMO && cfg && !photoIds.length && scenery !== null) showScenery();
+    else { renderNext(); renderReminders(); }
   }
 
   // 画面をつけたままにする（対応している端末だけ）
@@ -463,26 +514,31 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (cur) box.append(el("span", "tag", "いま"), el("span", null, cur.e.title));
     else if (nxt) box.append(el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title));
     if (allDay) box.append(el("span", "tag", "きょう"), el("span", null, allDay));
-    const due = ((data && data.reminders) || []).filter((r) => new Date(r.start) <= endOfToday()).map((r) => r.title).join("・");
+    const due = liveReminders().filter((r) => !r.done && new Date(r.start) <= endOfToday()).map((r) => r.title).join("・");
     if (due) box.append(el("span", "tag", "リマインダー"), el("span", null, due));
   }
   const endOfToday = () => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; };
+  // チェックを付けたものは、その時刻を過ぎたら一覧から消える。付けていないものは、その日の終わりまで残る
+  function liveReminders() {
+    const now = new Date(), day0 = new Date(today + "T00:00:00");
+    return ((data && data.reminders) || []).filter((r) => { const s = new Date(r.start); return s >= day0 && !(r.done && s <= now); })
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+  }
   function renderReminders() {
     const ul = $("rmList"); ul.textContent = "";
-    const list = ((data && data.reminders) || []).slice().sort((a, b) => new Date(a.start) - new Date(b.start));
-    list.forEach((r) => {
-      const s = new Date(r.start), li = el("li", "rm-item" + (s <= endOfToday() ? " due" : ""));
-      const b = el("button", "done"); b.type = "button"; b.setAttribute("aria-label", `「${r.title}」を済みにする`);
-      b.addEventListener("click", () => doneReminder(r));
+    liveReminders().forEach((r) => {
+      const s = new Date(r.start), li = el("li", "rm-item" + (s <= endOfToday() ? " due" : "") + (r.done ? " checked" : ""));
+      const b = el("button", "done"); b.type = "button"; b.setAttribute("aria-pressed", String(!!r.done)); b.setAttribute("aria-label", `「${r.title}」のチェック`);
+      b.addEventListener("click", () => markReminder(r));
       li.append(el("div", "time", (ymd(s) === today ? "きょう" : dayStr(s)) + String.fromCharCode(10) + hm(s)), el("div", "ttl", r.title), b);
       ul.append(li);
     });
   }
-  async function doneReminder(r) {
-    data.reminders = data.reminders.filter((x) => x.id !== r.id); renderReminders(); renderNext();
+  async function markReminder(r) {
+    r.done = !r.done; renderReminders(); renderNext();
     if (DEMO) return;
-    try { const res = await callApi({ action: "done", id: r.id }); if (!res.ok) throw new Error(res.error); }
-    catch (e) { $("rmMsg").textContent = "済みにできませんでした：" + e.message; refresh(); }
+    try { const res = await callApi({ action: "mark", id: r.id, on: r.done ? "1" : "0" }); if (!res.ok) throw new Error(res.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : res.error); }
+    catch (e) { $("rmMsg").textContent = "チェックを保存できませんでした：" + e.message; refresh(); }
   }
   function renderCalendar() {
     const todayUl = $("today"), upUl = $("upcoming"); todayUl.textContent = ""; upUl.textContent = "";
@@ -544,50 +600,146 @@ input::placeholder { color: var(--muted); opacity: .8; }
     });
   }
 
-  function render() { renderWeather(); renderCalendar(); renderReminders(); renderRoutines(); renderNews(); }
+  function render() { renderWeather(); renderCalendar(); renderReminders(); if (!rtDraft) renderRtEditor(); renderRoutines(); renderNews(); }
 
-  /* ---------- 写真（ドライブのフォルダから順に表示） ---------- */
-  let photoIds = [], photoOrder = [], photoTimer = null, photoFront = 0, photoBusy = false, demoPhotos = null;
+  /* ---------- 壁紙（自分の写真／山なみ／世界の絶景） ---------- */
+  let photoIds = [], photoOrder = [], photoFront = 0, wallBusy = false, demoPhotos = null, shown = null;
+  let world = [], worldAt = 0, worldIdx = 0;
+  let wallMode = store.get("ouchi.wall") || "photos";
   const layers = [$("photoA"), $("photoB")];
-  function showPhoto(url) {
+  // key が今と同じなら何もしない（同じ絵をフェードし直さない）
+  function showPhoto(url, caption, key) {
+    if (key && key === shown) return;
     const img = new Image();
     img.onload = () => {
       const back = layers[1 - photoFront];
       back.style.backgroundImage = `url("${url}")`;
       back.classList.add("on"); layers[photoFront].classList.remove("on");
-      photoFront = 1 - photoFront;
+      photoFront = 1 - photoFront; shown = key || url;
+      $("credit").textContent = caption || "";
       $("home").classList.add("hasphoto"); updateDotsTone();
     };
     img.src = url;
   }
-  // 写真が登録されていないときの絵（昼は明るい山なみ、夕方から朝は夕暮れ）
-  let scenery = null;
+  // 山なみの絵（昼は明るい山なみ、夕方から朝は夕暮れ）
   function showScenery() {
     const h = new Date().getHours(), kind = h >= 6 && h < 16 ? 0 : 1;
-    if (scenery === kind) return;
-    scenery = kind; showPhoto(demoPhoto(kind));
+    if (shown !== "scenery" + kind) showPhoto(demoPhoto(kind), "", "scenery" + kind);
   }
-  async function nextPhoto() {
-    if (photoBusy) return;
-    if (demoPhotos) { showPhoto(demoPhotos[photoFront]); return; }
-    if (!photoIds.length) { showScenery(); return; }
-    if (!photoOrder.length) photoOrder = photoIds.slice().sort(() => Math.random() - .5);
-    const id = photoOrder.pop();
-    photoBusy = true;
+  async function nextWall() {
+    if (wallBusy) return;
+    if (demoPhotos) { if (wallMode === "scenery") showScenery(); else showPhoto(demoPhotos[photoFront]); return; }
+    wallBusy = true;
     try {
-      const r = await callApi({ action: "photo", id });
-      if (r.ok && r.data) { showPhoto(r.data); if (r.data.length < 900000) store.set("ouchi.photo", r.data); }
-    } catch (e) { /* 次の番でまた試す */ }
-    finally { photoBusy = false; }
+      if (wallMode === "world") {
+        if (!world.length || Date.now() - worldAt > 6 * 3600000) {
+          const r = await callApi({ action: "scenic" });
+          if (r.ok && r.images && r.images.length) { world = r.images; worldAt = Date.now(); }
+          $("wallNote").textContent = r.ok ? "" : (r.error === "unknown_action" ? "「世界の絶景」には裏方（Apps Script）の更新が必要です。" : "絶景の写真を取得できませんでした。");
+        }
+        if (world.length) { const w = world[worldIdx++ % world.length]; showPhoto(w.url, w.caption, w.url); return; }
+      } else if (wallMode === "photos" && photoIds.length) {
+        if (!photoOrder.length) photoOrder = photoIds.slice().sort(() => Math.random() - .5);
+        const id = photoOrder.pop();
+        const r = await callApi({ action: "photo", id });
+        if (r.ok && r.data) { showPhoto(r.data, "", id); if (r.data.length < 900000) store.set("ouchi.photo", r.data); return; }
+        if (shown) return;
+      }
+      showScenery();
+    } catch (e) { if (!shown) showScenery(); }
+    finally { wallBusy = false; }
   }
   function setPhotos(ids) {
     const changed = ids.join() !== photoIds.join();
     photoIds = ids;
-    if (!ids.length) { clearInterval(photoTimer); photoTimer = null; if (store.get("ouchi.photo")) store.set("ouchi.photo", null); showScenery(); return; }
-    scenery = null;
-    if (changed) photoOrder = [];
-    if (!photoTimer) { photoTimer = setInterval(nextPhoto, PHOTO_EVERY); nextPhoto(); }
+    $("photoCount").textContent = `いま ${ids.length} 枚`;
+    if (!changed) return;
+    photoOrder = [];
+    if (!ids.length && store.get("ouchi.photo")) store.set("ouchi.photo", null);
+    if (wallMode === "photos") nextWall();
   }
+  function setWall(mode) {
+    wallMode = mode; store.set("ouchi.wall", mode);
+    $("wallNote").textContent = mode === "photos" && !photoIds.length && !DEMO ? "写真がまだないので、山なみを表示します。" : "";
+    syncWallSeg(); nextWall();
+  }
+  function syncWallSeg() { [...$("wallSeg").children].forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.wall === wallMode))); }
+  [...$("wallSeg").children].forEach((b) => b.addEventListener("click", () => setWall(b.dataset.wall)));
+  syncWallSeg();
+
+  /* ---------- 写真を追加（端末で縮小してからドライブのフォルダへ送る） ---------- */
+  function shrink(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL("image/jpeg", .85).split(",")[1]);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("この写真は読み込めませんでした")); };
+      img.src = url;
+    });
+  }
+  $("photoAdd").addEventListener("click", () => $("photoFile").click());
+  $("photoFile").addEventListener("change", async () => {
+    const files = [...$("photoFile").files], msg = $("photoMsg"); msg.className = "rm-msg";
+    if (!files.length) return;
+    if (DEMO) { msg.textContent = "試し表示では追加できません。"; return; }
+    $("photoAdd").disabled = true;
+    let ok = 0;
+    try {
+      for (const f of files) {
+        msg.textContent = `${ok + 1} / ${files.length} 枚目を送っています…`;
+        await callPost({ action: "upload", name: f.name.replace(/\.[^.]+$/, "") + ".jpg", data: await shrink(f) });
+        ok++;
+      }
+      msg.textContent = `${ok} 枚追加しました。`;
+      if (wallMode !== "photos") setWall("photos");
+    } catch (e) { msg.textContent = `${ok} 枚追加したところで止まりました：${e.message}`; msg.classList.add("err"); }
+    finally { $("photoAdd").disabled = false; $("photoFile").value = ""; refresh(); }
+  });
+
+  /* ---------- ルーティンの編集 ---------- */
+  let rtDraft = null;   // 編集中の一覧。null のときは裏方のデータをそのまま映す
+  function renderRtEditor() {
+    const list = rtDraft || ((data && data.routines) || []).slice().sort((a, b) => (a.order ?? 99) - (b.order ?? 99)).map((r) => ({ id: r.id, title: r.title, days: (r.days || []).slice() }));
+    const ul = $("rtList"); ul.textContent = "";
+    const edit = (fn) => { rtDraft = list; fn(); };
+    list.forEach((r, idx) => {
+      const li = el("li", "rt");
+      const t = el("input"); t.type = "text"; t.value = r.title; t.placeholder = "ルーティンの名前"; t.setAttribute("aria-label", "ルーティンの名前");
+      t.addEventListener("input", () => edit(() => { r.title = t.value; }));
+      const days = el("div", "days");
+      WD.forEach((w, d) => {
+        const b = el("button", null, w); b.type = "button"; b.setAttribute("aria-pressed", String(r.days.includes(d)));
+        b.addEventListener("click", () => { edit(() => { r.days = r.days.includes(d) ? r.days.filter((x) => x !== d) : r.days.concat(d).sort(); }); renderRtEditor(); });
+        days.append(b);
+      });
+      const del = el("button", "del", "×"); del.type = "button"; del.setAttribute("aria-label", `「${r.title}」を消す`);
+      del.addEventListener("click", () => { edit(() => { list.splice(idx, 1); }); renderRtEditor(); });
+      li.append(t, days, el("span", "note", r.days.length ? "" : "毎日"), del); ul.append(li);
+    });
+    if (!list.length) ul.append(el("li", "empty", "ルーティンはまだありません。"));
+  }
+  $("rtAdd").addEventListener("click", () => {
+    if (!rtDraft) { renderRtEditor(); rtDraft = ((data && data.routines) || []).slice().sort((a, b) => (a.order ?? 99) - (b.order ?? 99)).map((r) => ({ id: r.id, title: r.title, days: (r.days || []).slice() })); }
+    rtDraft.push({ id: "r" + Date.now().toString(36), title: "", days: [] }); renderRtEditor();
+    const inputs = $("rtList").querySelectorAll("input"); inputs[inputs.length - 1].focus();
+  });
+  $("rtSave").addEventListener("click", async () => {
+    const msg = $("rtMsg"); msg.className = "rm-msg";
+    if (!rtDraft) { msg.textContent = "変更はありません。"; return; }
+    const list = rtDraft.filter((r) => r.title.trim()).map((r, i) => ({ id: r.id, title: r.title.trim(), days: r.days, order: i + 1 }));
+    if (DEMO) { data.routines = list; rtDraft = null; render(); msg.textContent = "保存しました（試し表示）。"; return; }
+    $("rtSave").disabled = true; msg.textContent = "保存しています…";
+    try {
+      const r = await callPost({ action: "routines", list });
+      data.routines = r.routines; rtDraft = null; render(); msg.textContent = "保存しました。";
+    } catch (e) { msg.textContent = "保存できませんでした：" + e.message; msg.classList.add("err"); }
+    finally { $("rtSave").disabled = false; }
+  });
 
   /* ---------- 読み込み ---------- */
   let loading = false;
@@ -721,7 +873,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       weather: { today: { code: 2, max: 19.1, min: 7.8, pop: 0 }, tomorrow: { code: 3, max: 19, min: 11.1, pop: 20 }, hours },
       comment: "傘はいらなそうです。朝晩と日中の気温差が大きいので、羽織るものを一枚。",
       events: [ev("ゼミ", at(0, 13), 90, "研究室"), ev("買い出し", at(0, 23, 30), 20), { title: "燃えるごみ", allDay: true, start: ymd(at(0)), end: ymd(at(1)) }, ev("歯医者", at(1, 9), 30), ev("輪講", at(5, 15, 30), 90)],
-      reminders: [{ id: "r1", title: "牛乳を買う", start: at(0, 18).toISOString() }, { id: "r2", title: "パンチェッタのラップを外す", start: at(7, 9).toISOString() }],
+      reminders: [{ id: "r1", title: "牛乳を買う", start: at(0, 23, 50).toISOString(), done: true }, { id: "r2", title: "パンチェッタのラップを外す", start: at(7, 9).toISOString() }],
       routines: [{ id: "a", title: "風呂掃除", days: [], order: 1 }, { id: "b", title: "皿洗い", days: [], order: 2 }, { id: "c", title: "洗濯", days: [1, 3, 5], order: 3 }],
       checks: { a: true },
       news: ["ニュースの見出しがここに並びます", "見出しをタップすると記事が開きます", "少し大きめの文字で表示します", "一度に8件まで", "三分さわらなければ時計の画面に戻ります", "横にスワイプで画面が切り替わります"].map((t) => ({ title: t, source: "試し表示", url: "" })),
@@ -733,13 +885,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
   if (DEMO) {
     data = demoData(); checks = data.checks; showBoard(); tick(); render();
     $("statusText").textContent = "試し表示";
-    if (params.get("photo") !== "0") { demoPhotos = [demoPhoto(1), demoPhoto(0)]; nextPhoto(); setInterval(nextPhoto, 8000); }
+    if (params.get("photo") !== "0") { demoPhotos = [demoPhoto(1), demoPhoto(0)]; nextWall(); setInterval(nextWall, 8000); }
     const p = Number(params.get("page")); if (p) goTo(p, true);
     return;
   }
   if (!cfg) { showSetup(false); return; }
   showBoard(); tick(); render();
-  const lastPhoto = store.get("ouchi.photo"); if (lastPhoto) showPhoto(lastPhoto); else showScenery();
+  const lastPhoto = store.get("ouchi.photo");
+  if (wallMode === "photos" && lastPhoto) showPhoto(lastPhoto, "", "cached"); else if (wallMode === "world") nextWall(); else showScenery();
+  setInterval(nextWall, PHOTO_EVERY);
   refresh(); setInterval(refresh, 5 * 60 * 1000);
 })();
 </script>

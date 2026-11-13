@@ -74,10 +74,28 @@ function doGet(e) {
       case 'board': return json_(board_(p.date));
       case 'check': return json_(check_(p.date, p.id, p.on === '1'));
       case 'remind': return json_(remind_(p.title, p.start, Number(p.minutes || 30)));
-      case 'done': return json_(remindDone_(p.id));
+      case 'mark': return json_(remindMark_(p.id, p.on === '1'));
+      case 'scenic': return json_(scenic_());
       case 'event': return json_(event_(p.title, p.start, p.allday === '1', p.date));
       case 'photo': return json_(photo_(p.id));
       case 'ping': return json_({ ok: true });
+      default: return json_({ ok: false, error: 'unknown_action' });
+    }
+  } catch (err) {
+    return json_({ ok: false, error: String(err && err.message || err) });
+  }
+}
+
+/** 大きなデータ（写真・ルーティンの一覧）は POST で受け取る */
+function doPost(e) {
+  let p = {};
+  try { p = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad_request' }); }
+  const key = PropertiesService.getScriptProperties().getProperty('KEY');
+  if (!key || p.key !== key) return json_({ ok: false, error: 'bad_key' });
+  try {
+    switch (p.action) {
+      case 'upload': return json_(upload_(p.name, p.data));
+      case 'routines': return json_(saveRoutines_(p.list));
       default: return json_({ ok: false, error: 'unknown_action' });
     }
   } catch (err) {
@@ -302,7 +320,9 @@ function photo_(id) {
   if (getPhotoIds_().indexOf(id) < 0) throw new Error('写真が見つかりません');
   const auth = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
   let blob = null;
-  try {
+  const file = DriveApp.getFileById(id);
+  if (file.getSize() <= 1.5 * 1024 * 1024 && /image\/(jpeg|png)/.test(file.getMimeType())) blob = file.getBlob();
+  if (!blob) try {
     const meta = JSON.parse(UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '?fields=thumbnailLink', { headers: auth }).getContentText());
     if (meta.thumbnailLink) {
       const url = meta.thumbnailLink.replace(/=s\d+.*$/, '=s1600');
@@ -335,24 +355,26 @@ function getReminderCal_(create) {
   return cal;
 }
 
-/** 1週間前（過ぎたのに済みにしていないもの）から120日先までのリマインダー */
+/** きょうの0時から120日先までのリマインダー。チェックを付けたものは、時刻を過ぎたら返さない */
 function getReminders_(date) {
   const cal = getReminderCal_(false);
   if (!cal) return [];
   const day0 = new Date(date + 'T00:00:00+09:00');
-  return cal.getEvents(new Date(day0.getTime() - 7 * 86400000), new Date(day0.getTime() + 120 * 86400000)).map((ev) => ({
+  const now = new Date();
+  return cal.getEvents(day0, new Date(day0.getTime() + 120 * 86400000)).map((ev) => ({
     id: ev.getId(),
     title: ev.getTitle(),
     start: ev.getStartTime().toISOString(),
-  }));
+    done: ev.getTag('done') === '1',
+  })).filter((r) => new Date(r.start) >= day0 && !(r.done && new Date(r.start) <= now));
 }
 
-/** 済みにしたリマインダーを消す（専用カレンダーの中のものだけ） */
-function remindDone_(id) {
+/** リマインダーにチェックの印を付ける・外す（予定そのものは消さない） */
+function remindMark_(id, on) {
   const cal = getReminderCal_(false);
   const ev = cal && id ? cal.getEventById(id) : null;
   if (!ev) throw new Error('リマインダーが見つかりません');
-  ev.deleteEvent();
+  if (on) ev.setTag('done', '1'); else ev.deleteTag('done');
   return { ok: true };
 }
 
@@ -372,4 +394,57 @@ function event_(title, startIso, allDay, date) {
     cal.createEvent(title, start, new Date(start.getTime() + 60 * 60000));
   }
   return { ok: true, title: title };
+}
+
+/* ---------- ボードからの写真の追加 ---------- */
+
+function upload_(name, base64) {
+  if (!base64 || base64.length > 8 * 1024 * 1024) throw new Error('写真が大きすぎます');
+  const safe = String(name || 'photo.jpg').replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
+  const file = getPhotoFolder_(true).createFile(Utilities.newBlob(Utilities.base64Decode(base64), 'image/jpeg', safe));
+  CacheService.getScriptCache().remove('photos');
+  return { ok: true, id: file.getId() };
+}
+
+/* ---------- ボードからのルーティンの編集 ---------- */
+
+function saveRoutines_(list) {
+  if (!Array.isArray(list) || list.length > 50) throw new Error('一覧が正しくありません');
+  const rows = list.map((r, i) => {
+    const title = String(r.title || '').trim().slice(0, 40);
+    if (!title) throw new Error('名前が空のルーティンがあります');
+    const days = (Array.isArray(r.days) ? r.days : []).filter((d) => d >= 0 && d <= 6);
+    const text = days.length === 0 || days.length === 7 ? '毎日' : days.map((d) => DOW.charAt(d)).join('');
+    return [String(r.id || 'r' + Date.now() + i), title, text, i + 1, true];
+  });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = getSheet_().getSheetByName('routines');
+    const last = sh.getLastRow();
+    if (last > 1) sh.getRange(2, 1, last - 1, 5).clearContent();
+    if (rows.length) sh.getRange(2, 1, rows.length, 5).setValues(rows);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true, routines: getRoutines_() };
+}
+
+/* ---------- 世界の絶景（Bing の日替わり写真。個人利用） ---------- */
+
+function scenic_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('scenic');
+  if (hit) return JSON.parse(hit);
+  const images = [];
+  [0, 8].forEach((idx) => {
+    const d = JSON.parse(UrlFetchApp.fetch('https://www.bing.com/HPImageArchive.aspx?format=js&idx=' + idx + '&n=8&mkt=ja-JP').getContentText());
+    (d.images || []).forEach((im) => {
+      const url = 'https://www.bing.com' + im.url;
+      if (!images.some((x) => x.url === url)) images.push({ url: url, caption: im.copyright || im.title || '' });
+    });
+  });
+  const out = { ok: true, images: images };
+  cache.put('scenic', JSON.stringify(out), 6 * 60 * 60);
+  return out;
 }
