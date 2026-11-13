@@ -83,6 +83,7 @@ h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; f
 @media (max-width: 640px) { .wx { align-self: flex-start; } .wx-day.sub { display: none; } }
 .wx-day.sub .icon { width: 32px; height: 32px; }
 .wx, .clock, .next, .alarm-tag { cursor: pointer; }
+.clock, .date, .next, .comment { width: fit-content; max-width: 100%; }
 .alarm-tag { display: inline-block; margin-left: 16px; font-size: .62em; opacity: .85; font-family: var(--font-num); font-weight: 300; }
 .clock { font-family: var(--font-num); font-weight: 200; font-size: clamp(96px, 19vw, 250px); line-height: .9; letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin-left: -.04em; }
 .date { font-size: clamp(20px, 2.6vw, 30px); font-weight: 500; margin-top: 14px; }
@@ -330,7 +331,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <div class="rm-row"><button class="btn" type="button" id="rtAdd">＋ 追加</button><button class="btn primary" type="button" id="rtSave">保存</button></div>
         <p class="rm-msg" id="rtMsg"></p>
         <h2 style="margin-top:14px">接続</h2>
-        <div class="rm-row"><button class="btn" type="button" id="openSetup">接続の設定</button></div>
+        <div class="rm-row"><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reload">最新版に更新</button></div>
+        <p class="note" id="verNote"></p>
       </div>
     </div></div>
   </section>
@@ -389,6 +391,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
+  const VERSION = "2026-11-13 12:34";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -435,6 +438,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("cfgCancel").addEventListener("click", showBoard);
   $("openSetup").addEventListener("click", () => showSetup(true));
   $("toSettings").addEventListener("click", () => goTo(3));
+  $("reload").addEventListener("click", () => location.reload());
+  $("verNote").textContent = "版：" + VERSION;
 
   /* ---------- 裏方（Apps Script）を呼ぶ ---------- */
   async function callApi(q, c) {
@@ -896,7 +901,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         msg.textContent = `${ok + 1} / ${files.length} 枚目を送っています…`;
         const b64 = await shrink(f);
         const up = await callPost({ action: "upload", name: f.name.replace(/\.[^.]+$/, "") + ".jpg", data: b64 });
-        if (up.id) await idbDo("readwrite", (st) => st.put("data:image/jpeg;base64," + b64, up.id));
+        if (up.id) { await idbDo("readwrite", (st) => st.put("data:image/jpeg;base64," + b64, up.id)); setPhotos(photoIds.concat(up.id)); }
         ok++;
       }
       msg.textContent = `${ok} 枚追加しました。`;
@@ -961,6 +966,18 @@ input::placeholder { color: var(--muted); opacity: .8; }
       $("statusText").textContent = `更新できませんでした（${e.message}）`;
     } finally { loading = false; }
   }
+
+  // 新しい版が公開されていたら、自分で読み込み直す（入力中や窓を開いているときは待つ）
+  async function checkVersion() {
+    if (DEMO || location.protocol === "file:") return;
+    try {
+      const r = await (await fetch("version.json?" + Date.now(), { cache: "no-store" })).json();
+      const busy = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.querySelector(".sheet-bg:not([hidden])") || rtDraft;
+      if (r.version && r.version !== VERSION && !busy) location.reload();
+    } catch (e) {}
+  }
+  setInterval(checkVersion, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkVersion(); });
 
   /* ---------- ルーティンのチェック ---------- */
   let pendingChecks = 0, queue = Promise.resolve();
@@ -1257,6 +1274,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   if (wallMode !== "photos" || !photoIds.length) nextWall();
   setInterval(nextWall, PHOTO_EVERY);
   refresh(); setInterval(refresh, 5 * 60 * 1000);
+  { const p0 = Number(params.get("page")); if (p0) goTo(p0, true); }
 })();
 </script>
 </body>
