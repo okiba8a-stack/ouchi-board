@@ -145,6 +145,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .btn:focus-visible, .chk:focus-visible, input:focus-visible, .dots button:focus-visible, .news-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rm-preview { background: var(--soft); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .rm-preview .what { font-weight: 700; overflow-wrap: anywhere; }
+.rm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rm-item { display: grid; grid-template-columns: 76px minmax(0,1fr) auto; gap: 14px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rm-item:last-child { border-bottom: 0; }
+.rm-item .time { font-size: 14px; color: var(--muted); white-space: pre-line; line-height: 1.3; }
+.rm-item.due .time { color: var(--warn); }
+.rm-item .ttl { font-size: 17px; overflow-wrap: anywhere; }
+.rm-item .done { width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+.rm-item .done::before { content: ""; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.rm-item .done:active::before { background: var(--accent); border-color: var(--accent); }
 .rm-msg { font-size: 13px; color: var(--muted); min-height: 1em; }
 .rm-msg.err { color: var(--warn); }
 
@@ -209,7 +218,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <h2>リマインダー</h2>
         <form class="remember" id="rmForm" autocomplete="off">
           <div class="rm-row">
-            <input type="text" id="rmText" placeholder="1週間後にパンチェッタのラップを外す" enterkeyhint="done" aria-label="リマインダーの内容">
+            <input type="text" id="rmText" placeholder="例：1週間後にラップを外す" enterkeyhint="done" aria-label="リマインダーの内容">
             <button class="btn mic" type="button" id="rmMic" hidden aria-pressed="false" aria-label="声で入力">🎤</button>
           </div>
           <div class="rm-preview" id="rmPreview" hidden>
@@ -219,6 +228,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
           </div>
           <div class="rm-msg" id="rmMsg"></div>
         </form>
+        <ul class="rm-list" id="rmList"></ul>
         <h2 style="margin-top:14px">これからの天気 <small id="place"></small></h2>
         <div class="hours" id="hours"></div>
       </div>
@@ -459,6 +469,26 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (cur) box.append(el("span", "tag", "いま"), el("span", null, cur.e.title));
     else if (nxt) box.append(el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title));
     if (allDay) box.append(el("span", "tag", "きょう"), el("span", null, allDay));
+    const due = ((data && data.reminders) || []).filter((r) => new Date(r.start) <= endOfToday()).map((r) => r.title).join("・");
+    if (due) box.append(el("span", "tag", "リマインダー"), el("span", null, due));
+  }
+  const endOfToday = () => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; };
+  function renderReminders() {
+    const ul = $("rmList"); ul.textContent = "";
+    const list = ((data && data.reminders) || []).slice().sort((a, b) => new Date(a.start) - new Date(b.start));
+    list.forEach((r) => {
+      const s = new Date(r.start), li = el("li", "rm-item" + (s <= endOfToday() ? " due" : ""));
+      const b = el("button", "done"); b.type = "button"; b.setAttribute("aria-label", `「${r.title}」を済みにする`);
+      b.addEventListener("click", () => doneReminder(r));
+      li.append(el("div", "time", (ymd(s) === today ? "きょう" : dayStr(s)) + String.fromCharCode(10) + hm(s)), el("div", "ttl", r.title), b);
+      ul.append(li);
+    });
+  }
+  async function doneReminder(r) {
+    data.reminders = data.reminders.filter((x) => x.id !== r.id); renderReminders(); renderNext();
+    if (DEMO) return;
+    try { const res = await callApi({ action: "done", id: r.id }); if (!res.ok) throw new Error(res.error); }
+    catch (e) { $("rmMsg").textContent = "済みにできませんでした：" + e.message; refresh(); }
   }
   function renderCalendar() {
     const todayUl = $("today"), upUl = $("upcoming"); todayUl.textContent = ""; upUl.textContent = "";
@@ -520,7 +550,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     });
   }
 
-  function render() { renderWeather(); renderCalendar(); renderRoutines(); renderNews(); }
+  function render() { renderWeather(); renderCalendar(); renderReminders(); renderRoutines(); renderNews(); }
 
   /* ---------- 写真（ドライブのフォルダから順に表示） ---------- */
   let photoIds = [], photoOrder = [], photoTimer = null, photoFront = 0, photoBusy = false, demoPhotos = null;
@@ -617,7 +647,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     try {
       const r = await callApi({ action: "remind", title, start: when.toISOString() });
       if (!r.ok) throw new Error(r.error);
-      msg.textContent = `登録しました：${label}。その時刻にGoogleカレンダーから通知が届きます。`;
+      msg.textContent = `登録しました：${label}。その時刻に通知が届きます。`;
       $("rmText").value = ""; $("rmPreview").hidden = true; parsed = null;
       refresh();
     } catch (e) { msg.textContent = "登録できませんでした：" + e.message; msg.classList.add("err"); }
@@ -665,7 +695,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
       ok: true, date: today, place: "東京都日野市", at: new Date().toISOString(),
       weather: { today: { code: 2, max: 19.1, min: 7.8, pop: 0 }, tomorrow: { code: 3, max: 19, min: 11.1, pop: 20 }, hours },
       comment: "傘はいらなそうです。朝晩と日中の気温差が大きいので、羽織るものを一枚。",
-      events: [ev("ゼミ", at(0, 13), 90, "研究室"), ev("買い出し", at(0, 23, 30), 20), { title: "燃えるごみ", allDay: true, start: ymd(at(0)), end: ymd(at(1)) }, ev("歯医者", at(1, 9), 30), ev("輪講", at(5, 15, 30), 90), ev("パンチェッタのラップを外す", at(7, 9), 30)],
+      events: [ev("ゼミ", at(0, 13), 90, "研究室"), ev("買い出し", at(0, 23, 30), 20), { title: "燃えるごみ", allDay: true, start: ymd(at(0)), end: ymd(at(1)) }, ev("歯医者", at(1, 9), 30), ev("輪講", at(5, 15, 30), 90)],
+      reminders: [{ id: "r1", title: "牛乳を買う", start: at(0, 18).toISOString() }, { id: "r2", title: "パンチェッタのラップを外す", start: at(7, 9).toISOString() }],
       routines: [{ id: "a", title: "風呂掃除", days: [], order: 1 }, { id: "b", title: "皿洗い", days: [], order: 2 }, { id: "c", title: "洗濯", days: [1, 3, 5], order: 3 }],
       checks: { a: true },
       news: ["ニュースの見出しがここに並びます", "見出しをタップすると記事が開きます", "少し大きめの文字で表示します", "一度に8件まで", "三分さわらなければ時計の画面に戻ります", "横にスワイプで画面が切り替わります"].map((t) => ({ title: t, source: "試し表示", url: "" })),

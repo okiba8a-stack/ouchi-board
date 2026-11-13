@@ -26,6 +26,7 @@ function setup() {
   // カレンダーと外部通信の権限をここで確認しておく
   CalendarApp.getDefaultCalendar().getName();
   UrlFetchApp.fetch('https://api.open-meteo.com/v1/forecast?latitude=35&longitude=139&daily=weather_code&forecast_days=1');
+  getReminderCal_(true);
   const folder = getPhotoFolder_(true);
   Logger.log('写真フォルダ（ここに入れた写真がボードに出ます）: ' + folder.getUrl());
   Logger.log('合言葉（key）: ' + key);
@@ -73,6 +74,7 @@ function doGet(e) {
       case 'board': return json_(board_(p.date));
       case 'check': return json_(check_(p.date, p.id, p.on === '1'));
       case 'remind': return json_(remind_(p.title, p.start, Number(p.minutes || 30)));
+      case 'done': return json_(remindDone_(p.id));
       case 'photo': return json_(photo_(p.id));
       case 'ping': return json_({ ok: true });
       default: return json_({ ok: false, error: 'unknown_action' });
@@ -96,6 +98,7 @@ function board_(dateStr) {
     date: date,
     place: PLACE,
     events: safe_(() => getEvents_(date)),
+    reminders: safe_(() => getReminders_(date)) || [],
     weather: weather,
     comment: weather ? comment_(weather) : '',
     news: safe_(getNews_),
@@ -117,8 +120,9 @@ function getEvents_(date) {
   const end = new Date(start.getTime() + 8 * 86400000);
   const seen = {};
   const out = [];
+  const remId = PropertiesService.getScriptProperties().getProperty('REMIND_CAL_ID');
   CalendarApp.getAllCalendars().forEach((cal) => {
-    if (cal.isHidden()) return;
+    if (cal.isHidden() || cal.getId() === remId) return;
     cal.getEvents(start, end).forEach((ev) => {
       const allDay = ev.isAllDayEvent();
       const s = allDay ? ev.getAllDayStartDate() : ev.getStartTime();
@@ -139,14 +143,14 @@ function getEvents_(date) {
   return out;
 }
 
-/** 「リマインダー」：通知つきの予定をメインのカレンダーに作る */
+/** 「リマインダー」：通知つきの予定を、専用のカレンダー「リマインダー」に作る（ふつうの予定と分けるため） */
 function remind_(title, startIso, minutes) {
   title = String(title || '').trim();
   if (!title) throw new Error('内容が空です');
   const start = new Date(startIso);
   if (isNaN(start)) throw new Error('日時が読めません');
   const end = new Date(start.getTime() + Math.max(5, Math.min(minutes || 30, 600)) * 60000);
-  const ev = CalendarApp.getDefaultCalendar().createEvent(title, start, end, { description: 'おうちボードから登録' });
+  const ev = getReminderCal_(true).createEvent(title, start, end, { description: 'おうちボードから登録' });
   ev.removeAllReminders();
   ev.addPopupReminder(0);
   return { ok: true, title: title, start: start.toISOString() };
@@ -313,4 +317,40 @@ function photo_(id) {
     blob = f.getBlob();
   }
   return { ok: true, id: id, data: 'data:' + (blob.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(blob.getBytes()) };
+}
+
+/* ---------- リマインダー専用のカレンダー ---------- */
+
+function getReminderCal_(create) {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('REMIND_CAL_ID');
+  if (id) {
+    const cal = CalendarApp.getCalendarById(id);
+    if (cal) return cal;
+  }
+  if (!create) return null;
+  const cal = CalendarApp.createCalendar('リマインダー', { timeZone: TZ });
+  props.setProperty('REMIND_CAL_ID', cal.getId());
+  return cal;
+}
+
+/** 1週間前（過ぎたのに済みにしていないもの）から120日先までのリマインダー */
+function getReminders_(date) {
+  const cal = getReminderCal_(false);
+  if (!cal) return [];
+  const day0 = new Date(date + 'T00:00:00+09:00');
+  return cal.getEvents(new Date(day0.getTime() - 7 * 86400000), new Date(day0.getTime() + 120 * 86400000)).map((ev) => ({
+    id: ev.getId(),
+    title: ev.getTitle(),
+    start: ev.getStartTime().toISOString(),
+  }));
+}
+
+/** 済みにしたリマインダーを消す（専用カレンダーの中のものだけ） */
+function remindDone_(id) {
+  const cal = getReminderCal_(false);
+  const ev = cal && id ? cal.getEventById(id) : null;
+  if (!ev) throw new Error('リマインダーが見つかりません');
+  ev.deleteEvent();
+  return { ok: true };
 }
