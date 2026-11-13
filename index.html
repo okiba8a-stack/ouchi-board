@@ -213,6 +213,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .ev .time { font-size: 20px; }
 .news-list li::before { color: var(--accent); }
 
+.ev { grid-template-columns: 76px minmax(0,1fr) auto; }
+.rm-item { grid-template-columns: 76px minmax(0,1fr) auto auto; gap: 6px 10px; }
+.more { width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--muted); font: inherit; font-size: 22px; line-height: 1; cursor: pointer; padding: 0; align-self: center; }
+.more:active { background: var(--soft); }
 /* 長押しで開く編集の窓 */
 .ev, .rm-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .ev.hold, .rm-item.hold { background: var(--soft); border-radius: 10px; }
@@ -588,7 +592,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       const s = new Date(r.start), li = el("li", "rm-item" + (s <= endOfToday() ? " due" : "") + (r.done ? " checked" : ""));
       const b = el("button", "done"); b.type = "button"; b.setAttribute("aria-pressed", String(!!r.done)); b.setAttribute("aria-label", `「${r.title}」のチェック`);
       b.addEventListener("click", () => markReminder(r));
-      li.append(el("div", "time", (ymd(s) === today ? "きょう" : dayStr(s)) + String.fromCharCode(10) + hm(s)), el("div", "ttl", r.title), b);
+      li.append(el("div", "time", (ymd(s) === today ? "きょう" : dayStr(s)) + String.fromCharCode(10) + hm(s)), el("div", "ttl", r.title), editBtn({ kind: "rm", e: r, s, allDay: false }), b);
       attachHold(li, { kind: "rm", e: r, s, allDay: false });
       ul.append(li);
     });
@@ -613,7 +617,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       const body = el("div"); body.append(el("div", "ttl", e.title || "（タイトルなし）"));
       if (e.location) body.append(el("div", "loc", e.location));
       attachHold(li, { kind: "ev", e, s, allDay });
-      li.append(body); todayUl.append(li);
+      li.append(body, editBtn({ kind: "ev", e, s, allDay })); todayUl.append(li);
     });
     if (!uEv.length) upUl.append(el("li", "empty", "予定はありません。"));
     uEv.slice(0, 8).forEach(({ e, allDay, s }) => {
@@ -621,7 +625,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       li.append(el("div", "time", dayStr(s) + (allDay ? "" : "\n" + hm(s))));
       const body = el("div"); body.append(el("div", "ttl", e.title || "（タイトルなし）"));
       attachHold(li, { kind: "ev", e, s, allDay });
-      li.append(body); upUl.append(li);
+      li.append(body, editBtn({ kind: "ev", e, s, allDay })); upUl.append(li);
     });
     if (data.at) $("calState").textContent = `${hm(new Date(data.at))} 取得`;
   }
@@ -720,6 +724,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (!ids.length && store.get("ouchi.photo")) store.set("ouchi.photo", null);
     if (wallMode === "photos") nextWall();
   }
+  $("home").addEventListener("click", () => { if (wallMode !== "scenery" || demoPhotos) nextWall(); });
   function setWall(mode) {
     wallMode = mode; store.set("ouchi.wall", mode);
     $("wallNote").textContent = mode === "photos" && !photoIds.length && !DEMO ? "写真がまだないので、山なみを表示します。" : "";
@@ -835,11 +840,16 @@ input::placeholder { color: var(--muted); opacity: .8; }
 
   /* ---------- 長押しで編集・削除 ---------- */
   const toLocalInput = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  function editBtn(item) {
+    const b = el("button", "more", "⋯"); b.type = "button"; b.setAttribute("aria-label", `「${item.e.title || ""}」を編集`);
+    b.addEventListener("click", (ev) => { ev.stopPropagation(); openSheet(item); });
+    return b;
+  }
   function attachHold(li, item) {
     let timer = null, x = 0, y = 0;
     const cancel = () => { clearTimeout(timer); timer = null; li.classList.remove("hold"); };
-    li.addEventListener("pointerdown", (e) => {
-      x = e.clientX; y = e.clientY; li.classList.add("hold");
+    const start = (px, py) => {
+      cancel(); x = px; y = py; li.classList.add("hold");
       timer = setTimeout(() => {
         cancel(); sw = null;   // スワイプ扱いにしない
         // 指を離したときのタップ（チェックなど）を1回だけ無効にする
@@ -847,10 +857,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
         addEventListener("click", eat, { capture: true, once: true });
         setTimeout(() => removeEventListener("click", eat, { capture: true }), 700);
         openSheet(item);
-      }, 550);
-    });
-    li.addEventListener("pointermove", (e) => { if (timer && Math.hypot(e.clientX - x, e.clientY - y) > 8) cancel(); });
-    ["pointerup", "pointercancel", "pointerleave"].forEach((t) => li.addEventListener(t, cancel));
+      }, 500);
+    };
+    const moved = (px, py) => { if (timer && Math.hypot(px - x, py - y) > 12) cancel(); };
+    li.addEventListener("touchstart", (e) => { if (e.touches.length === 1) start(e.touches[0].clientX, e.touches[0].clientY); else cancel(); }, { passive: true });
+    li.addEventListener("touchmove", (e) => moved(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
+    ["touchend", "touchcancel"].forEach((t) => li.addEventListener(t, cancel));
+    li.addEventListener("mousedown", (e) => { if (e.button === 0) start(e.clientX, e.clientY); });
+    li.addEventListener("mousemove", (e) => moved(e.clientX, e.clientY));
+    ["mouseup", "mouseleave"].forEach((t) => li.addEventListener(t, cancel));
     li.addEventListener("contextmenu", (e) => e.preventDefault());
   }
   let sheetItem = null;
