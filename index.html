@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>おうちボード</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -153,7 +153,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .rm-item .ttl { font-size: 17px; overflow-wrap: anywhere; }
 .rm-item .done { width: 44px; height: 44px; border-radius: 50%; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
 .rm-item .done::before { content: ""; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--muted); transition: background .2s, border-color .2s; }
-.rm-item .done[aria-pressed="true"]::before { background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center/16px no-repeat; border-color: var(--accent); }
+.rm-item .done[aria-pressed="true"]::before { background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2314261c' stroke-width='3'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center/16px no-repeat; border-color: var(--accent); }
 .rm-item.checked .ttl { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line); }
 .credit { position: absolute; right: var(--pad-r); bottom: max(14px, env(safe-area-inset-bottom)); font-size: 11px; color: #fff; opacity: .7; text-shadow: 0 1px 6px rgba(0,0,0,.6); max-width: 46%; text-align: right; }
 .cols .wide { grid-column: span 2; }
@@ -189,6 +189,30 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .setup label { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
 .setup p { margin: 0; font-size: 14px; }
 .setup .ok { color: var(--accent); font-weight: 700; }
+/* 2枚目以降：ぼかした壁紙＋半透明のカード（色は白系に切り替える） */
+.backdrop { position: fixed; inset: -70px; z-index: 0; background: #23262b center / cover no-repeat; filter: blur(38px) brightness(.5) saturate(1.15); }
+.pager { position: relative; z-index: 1; }
+.page:not(.home) {
+  --ink: #fff; --muted: rgba(255,255,255,.66); --line: rgba(255,255,255,.15); --soft: rgba(255,255,255,.14);
+  --accent: #bfe3cc; --accent-ink: #14261c; --rain: #a9cdf5; --sun: #ffd98a; --warn: #ffb59a;
+  color: var(--ink); color-scheme: dark;
+}
+.page:not(.home) .page-inner { display: flex; flex-direction: column; gap: 18px; }
+.page-inner, .page-inner * { touch-action: pan-y; }
+.bar { flex: none; display: flex; align-items: baseline; gap: 16px; padding: 0 6px; }
+.bar-clock { font-family: var(--font-num); font-weight: 200; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.bar-date { font-size: 15px; color: var(--muted); }
+.bar-title { margin-left: auto; font-size: 13px; font-weight: 700; letter-spacing: .24em; color: var(--muted); }
+.cols { flex: 1; width: 100%; min-height: 0; gap: 18px; grid-template-rows: 1fr; align-content: stretch; }
+@media (max-width: 1000px) { .cols { grid-template-rows: none; flex: none; } }
+.col, .news-wrap { background: rgba(16,18,22,.38); border: 1px solid rgba(255,255,255,.12); border-radius: 28px; padding: 24px 26px; box-shadow: 0 10px 40px rgba(0,0,0,.18); }
+.news-wrap { flex: 1; width: 100%; min-height: 0; }
+@media (max-width: 640px) { .col, .news-wrap { padding: 20px 18px; border-radius: 22px; } .bar-clock { font-size: 36px; } }
+.dots button::before { background: #fff; box-shadow: 0 0 4px rgba(0,0,0,.35); }
+.chk .box, .rm-item .done::before { border-color: rgba(255,255,255,.55); }
+.ev .time { font-size: 20px; }
+.news-list li::before { color: var(--accent); }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -202,6 +226,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <div class="rm-row"><button class="btn primary" type="button" id="cfgSave">保存してつなぐ</button><button class="btn" type="button" id="cfgCancel" hidden>やめる</button></div>
   <p class="rm-msg" id="cfgMsg"></p>
 </section>
+
+<div class="backdrop" id="backdrop" hidden></div>
 
 <main class="pager" id="pager" hidden>
   <section class="page home" id="home" aria-label="時計と天気">
@@ -244,7 +270,6 @@ input::placeholder { color: var(--muted); opacity: .8; }
 
   <section class="page" aria-label="ニュース">
     <div class="page-inner"><div class="news-wrap">
-      <h2>ニュース</h2>
       <ul class="news-list" id="news"><li class="empty">読み込み中…</li></ul>
       <div class="foot"><span id="statusText"></span><button type="button" id="toSettings">設定</button></div>
     </div></div>
@@ -311,11 +336,11 @@ input::placeholder { color: var(--muted); opacity: .8; }
   if (cfg) store.set("ouchi.cfg", cfg);
 
   function showSetup(canCancel) {
-    $("pager").hidden = true; $("dots").hidden = true; $("setup").hidden = false;
+    $("pager").hidden = true; $("dots").hidden = true; $("backdrop").hidden = true; $("setup").hidden = false;
     $("cfgCancel").hidden = !canCancel;
     if (cfg) { $("cfgApi").value = cfg.api; $("cfgKey").value = cfg.key; }
   }
-  function showBoard() { $("setup").hidden = true; $("pager").hidden = false; $("dots").hidden = false; }
+  function showBoard() { $("setup").hidden = true; $("pager").hidden = false; $("dots").hidden = false; $("backdrop").hidden = false; }
 
   $("cfgSave").addEventListener("click", async () => {
     const api = $("cfgApi").value.trim(), key = $("cfgKey").value.trim();
@@ -420,11 +445,22 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
   ["pointerdown", "keydown", "input"].forEach((t) => document.addEventListener(t, touchIdle, { passive: true }));
 
+  document.querySelectorAll(".page:not(.home)").forEach((pg) => {
+    const bar = el("header", "bar");
+    bar.append(el("span", "bar-clock"), el("span", "bar-date"), el("span", "bar-title", pg.getAttribute("aria-label")));
+    pg.querySelector(".page-inner").prepend(bar);
+  });
+  // 2本指の拡大縮小を止める（拡大したままになるとスクロールできなくなるため）
+  ["gesturestart", "gesturechange", "gestureend"].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
   /* ---------- 時計 ---------- */
   let today = ymd(new Date());
   function tick() {
     const d = new Date();
     $("clock").textContent = hm(d);
+    document.querySelectorAll(".bar-clock").forEach((c) => { c.textContent = hm(d); });
+    document.querySelectorAll(".bar-date").forEach((c) => { c.textContent = `${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）`; });
     const dEl = $("date"); dEl.textContent = "";
     dEl.append(`${d.getMonth()+1}月${d.getDate()}日　${WD[d.getDay()]}曜日`, el("span", "sub", `令和${d.getFullYear()-2018}年`));
     const h = d.getHours();
@@ -616,6 +652,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       back.style.backgroundImage = `url("${url}")`;
       back.classList.add("on"); layers[photoFront].classList.remove("on");
       photoFront = 1 - photoFront; shown = key || url;
+      $("backdrop").style.backgroundImage = `url("${url}")`;
       $("credit").textContent = caption || "";
       $("home").classList.add("hasphoto"); updateDotsTone();
     };
