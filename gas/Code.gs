@@ -26,6 +26,8 @@ function setup() {
   // カレンダーと外部通信の権限をここで確認しておく
   CalendarApp.getDefaultCalendar().getName();
   UrlFetchApp.fetch('https://api.open-meteo.com/v1/forecast?latitude=35&longitude=139&daily=weather_code&forecast_days=1');
+  const folder = getPhotoFolder_(true);
+  Logger.log('写真フォルダ（ここに入れた写真がボードに出ます）: ' + folder.getUrl());
   Logger.log('合言葉（key）: ' + key);
   Logger.log('データのスプレッドシート: ' + ss.getUrl());
 }
@@ -71,6 +73,7 @@ function doGet(e) {
       case 'board': return json_(board_(p.date));
       case 'check': return json_(check_(p.date, p.id, p.on === '1'));
       case 'remind': return json_(remind_(p.title, p.start, Number(p.minutes || 30)));
+      case 'photo': return json_(photo_(p.id));
       case 'ping': return json_({ ok: true });
       default: return json_({ ok: false, error: 'unknown_action' });
     }
@@ -98,6 +101,7 @@ function board_(dateStr) {
     news: safe_(getNews_),
     routines: getRoutines_(),
     checks: getChecks_(date),
+    photos: safe_(getPhotoIds_) || [],
     at: new Date().toISOString(),
   };
 }
@@ -255,4 +259,58 @@ function check_(date, id, on) {
     lock.releaseLock();
   }
   return { ok: true, checks: getChecks_(date) };
+}
+
+/* ---------- 写真（Google ドライブのフォルダ「おうちボード 写真」） ---------- */
+
+function getPhotoFolder_(create) {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('PHOTO_FOLDER_ID');
+  if (id) {
+    try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { /* 作り直す */ }
+  }
+  if (!create) return null;
+  const folder = DriveApp.createFolder('おうちボード 写真');
+  props.setProperty('PHOTO_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+function getPhotoIds_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('photos');
+  if (hit) return JSON.parse(hit);
+  const folder = getPhotoFolder_(false);
+  const ids = [];
+  if (folder) {
+    const it = folder.getFiles();
+    while (it.hasNext() && ids.length < 300) {
+      const f = it.next();
+      if (String(f.getMimeType()).indexOf('image/') === 0) ids.push(f.getId());
+    }
+  }
+  cache.put('photos', JSON.stringify(ids), 10 * 60);
+  return ids;
+}
+
+/** 写真1枚を、画面に合う大きさ（長辺1600px）の画像データで返す */
+function photo_(id) {
+  if (getPhotoIds_().indexOf(id) < 0) throw new Error('写真が見つかりません');
+  const auth = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
+  let blob = null;
+  try {
+    const meta = JSON.parse(UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '?fields=thumbnailLink', { headers: auth }).getContentText());
+    if (meta.thumbnailLink) {
+      const url = meta.thumbnailLink.replace(/=s\d+.*$/, '=s1600');
+      let res = UrlFetchApp.fetch(url, { headers: auth, muteHttpExceptions: true });
+      if (res.getResponseCode() !== 200) res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      if (res.getResponseCode() === 200) blob = res.getBlob();
+    }
+  } catch (e) { console.error(e); }
+  if (!blob) {
+    // 縮小版が取れないときは元の画像（大きすぎるもの・HEIC は出せない）
+    const f = DriveApp.getFileById(id);
+    if (f.getSize() > 6 * 1024 * 1024 || !/image\/(jpeg|png|webp|gif)/.test(f.getMimeType())) throw new Error('この写真は表示できません');
+    blob = f.getBlob();
+  }
+  return { ok: true, id: id, data: 'data:' + (blob.getContentType() || 'image/jpeg') + ';base64,' + Utilities.base64Encode(blob.getBytes()) };
 }
