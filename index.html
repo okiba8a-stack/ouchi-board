@@ -59,9 +59,10 @@ h2 { margin: 0; font-weight: 700; font-size: 13px; letter-spacing: .14em; color:
 h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; font-size: 12px; }
 
 /* ページ送り */
-.pager { height: 100%; display: flex; overflow: hidden; touch-action: pan-y; overscroll-behavior: none; --x: 0%; }
-.page { flex: 0 0 100%; width: 100%; height: 100%; position: relative; overflow: hidden; transform: translateX(var(--x)); transition: transform .2s cubic-bezier(.2,.9,.25,1); will-change: transform; }
-.pager.drag .page { transition: none; }
+.pager { height: 100%; position: relative; overflow: hidden; touch-action: pan-y; overscroll-behavior: none; --dx: 0px; }
+/* ページは輪につながる。--o は今のページからいくつ隣か（-1 が左、1 が右） */
+.page { position: absolute; inset: 0; overflow: hidden; transform: translateX(calc(var(--o, 0) * 100% + var(--dx))); transition: transform .2s cubic-bezier(.2,.9,.25,1); will-change: transform; }
+.pager.drag .page, .page.jump { transition: none; }
 .page-inner { height: 100%; overflow-y: auto; padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l); scrollbar-width: none; }
 .page-inner::-webkit-scrollbar { display: none; }
 .dots { position: fixed; left: 0; right: 0; bottom: max(14px, env(safe-area-inset-bottom)); display: flex; justify-content: center; gap: 4px; z-index: 5; pointer-events: none; }
@@ -219,6 +220,24 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .news-wrap { flex: 1; width: 100%; min-height: 0; }
 @media (max-width: 640px) { .col, .news-wrap { padding: 20px 18px; border-radius: 22px; } .bar-clock { font-size: 36px; } }
 .dots button::before { background: #fff; box-shadow: 0 0 4px rgba(0,0,0,.35); }
+/* ツール：小さなカードを1ページに並べ、押すと大きく開く */
+.tools { flex: 1; min-height: 0; width: 100%; max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 16px; }
+@media (orientation: portrait), (max-width: 900px) { .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tool { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 10px; background: rgba(16,18,22,.38); border: 1px solid rgba(255,255,255,.12); border-radius: 24px; padding: 18px 20px; box-shadow: 0 10px 40px rgba(0,0,0,.18); cursor: pointer; }
+.tool:not(.open):active { background: rgba(16,18,22,.5); }
+.tool-head { flex: none; display: flex; align-items: center; gap: 8px; }
+.tool-head h2 { flex: 1; min-width: 0; }
+.tool-x { display: none; width: 44px; height: 44px; margin: -8px -8px -8px 0; border: 0; border-radius: 50%; background: var(--soft); color: var(--ink); font: inherit; font-size: 24px; line-height: 1; cursor: pointer; }
+.tool-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.tool:not(.open) .tool-body { flex: 1; overflow: hidden; pointer-events: none; zoom: .8; -webkit-mask-image: linear-gradient(#000 72%, transparent); mask-image: linear-gradient(#000 72%, transparent); }
+.tool.ghost { visibility: hidden; }
+.tool.open { position: absolute; z-index: 12; top: var(--pad-t); bottom: var(--pad-b); left: 0; right: 0; margin: 0 auto; width: min(960px, calc(100% - var(--pad-l) - var(--pad-r))); cursor: auto; background: rgba(20,22,26,.98); padding: 24px 28px; animation: toolIn .18s ease-out; }
+.tool.open .tool-x { display: grid; place-items: center; }
+.tool.open .tool-body { flex: 1; overflow-y: auto; }
+.tool-scrim { position: absolute; inset: 0; z-index: 11; background: rgba(0,0,0,.45); }
+@keyframes toolIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+.rm-row.wrap { flex-wrap: wrap; }
+@media (max-width: 640px) { .tools { gap: 10px; } .tool { padding: 14px 14px; border-radius: 18px; } .tool.open { padding: 18px 16px; } }
 .chk .box, .rm-item .done::before { border-color: rgba(255,255,255,.55); }
 .ev .time { font-size: 20px; }
 .news-list li::before { color: var(--accent); }
@@ -329,31 +348,77 @@ input::placeholder { color: var(--muted); opacity: .8; }
   </section>
 
   <section class="page" aria-label="ツール">
-    <div class="page-inner"><div class="cols">
-      <div class="col">
-        <h2>アシスタント <small id="aiTag"></small></h2>
-        <form class="remember" id="asForm" autocomplete="off">
-          <div class="rm-row">
-            <input type="text" id="asText" placeholder="例：タイマー10分 パスタ／明日の予定は？" enterkeyhint="send" aria-label="アシスタントに頼むこと">
-            <button class="btn mic" type="button" id="asMic" hidden aria-pressed="false" aria-label="声で頼む">🎤</button>
+    <div class="page-inner"><div class="tools" id="tools">
+      <div class="tool" data-tool="as">
+        <div class="tool-head"><h2>アシスタント <small id="aiTag"></small></h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-body">
+          <form class="remember" id="asForm" autocomplete="off">
+            <div class="rm-row">
+              <input type="text" id="asText" placeholder="例：タイマー10分 パスタ／明日の予定は？" enterkeyhint="send" aria-label="アシスタントに頼むこと">
+              <button class="btn mic" type="button" id="asMic" hidden aria-pressed="false" aria-label="声で頼む">🎤</button>
+            </div>
+          </form>
+          <div class="as-log" id="asLog" aria-live="polite"></div>
+          <label class="allday"><input type="checkbox" id="asSpeak">声で返事する</label>
+        </div>
+      </div>
+      <div class="tool" data-tool="tm">
+        <div class="tool-head"><h2>タイマー・アラーム</h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-body">
+          <div class="seg" id="tmPresets"></div>
+          <ul class="tm-list" id="tmList"></ul>
+          <div class="rm-row"><button class="btn" type="button" id="toolAlarm">アラームを設定</button></div>
+        </div>
+      </div>
+      <div class="tool" data-tool="memo">
+        <div class="tool-head"><h2>メモ・買い物 <small id="memoCount"></small></h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-body">
+          <form class="rm-row" id="memoForm" autocomplete="off"><input type="text" id="memoText" placeholder="例：牛乳" enterkeyhint="done" aria-label="メモ" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
+          <ul class="chk-list" id="memoList"></ul>
+        </div>
+      </div>
+      <div class="tool" data-tool="wk">
+        <div class="tool-head"><h2>週間天気 <small id="wkPlace"></small></h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-body"><ul class="wk-list" id="wkList"></ul></div>
+      </div>
+      <div class="tool" data-tool="wall">
+        <div class="tool-head"><h2>壁紙</h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-body">
+          <div class="seg" id="wallSeg">
+            <button class="btn" type="button" data-wall="photos">自分の写真</button>
+            <button class="btn" type="button" data-wall="scenery">山なみ</button>
+            <button class="btn" type="button" data-wall="world">世界の絶景</button>
           </div>
-        </form>
-        <div class="as-log" id="asLog" aria-live="polite"></div>
-        <label class="allday"><input type="checkbox" id="asSpeak">声で返事する</label>
-        <h2 style="margin-top:14px">タイマー</h2>
-        <div class="seg" id="tmPresets"></div>
-        <ul class="tm-list" id="tmList"></ul>
+          <p class="note" id="wallNote"></p>
+        </div>
       </div>
-      <div class="col">
-        <h2>メモ・買い物 <small id="memoCount"></small></h2>
-        <form class="rm-row" id="memoForm" autocomplete="off"><input type="text" id="memoText" placeholder="例：牛乳" enterkeyhint="done" aria-label="メモ" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
-        <ul class="chk-list" id="memoList"></ul>
+      <div class="tool" data-tool="photo">
+        <div class="tool-head"><h2>写真 <small id="photoCount"></small></h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-body">
+          <input type="file" id="photoFile" accept="image/*" multiple hidden>
+          <div class="rm-row"><button class="btn" type="button" id="photoAdd">写真を選ぶ</button></div>
+          <p class="rm-msg" id="photoMsg"></p>
+          <div class="ph-grid" id="phGrid"></div>
+        </div>
       </div>
-      <div class="col c3">
-        <h2>週間天気 <small id="wkPlace"></small></h2>
-        <ul class="wk-list" id="wkList"></ul>
+      <div class="tool" data-tool="rt">
+        <div class="tool-head"><h2>ルーティンの編集</h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-body">
+          <ul class="rt-list" id="rtList"></ul>
+          <div class="rm-row"><button class="btn" type="button" id="rtAdd">＋ 追加</button><button class="btn primary" type="button" id="rtSave">保存</button></div>
+          <p class="rm-msg" id="rtMsg"></p>
+        </div>
+      </div>
+      <div class="tool" data-tool="sys">
+        <div class="tool-head"><h2>接続と更新</h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-body">
+          <p class="note" id="verNote"></p>
+          <div class="rm-row wrap"><button class="btn" type="button" id="reload">最新版に更新</button><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reinstall">ホーム画面に入れ直す</button></div>
+          <p class="rm-msg" id="reinstallMsg"></p>
+        </div>
       </div>
     </div></div>
+    <div class="tool-scrim" id="toolScrim" hidden></div>
   </section>
 
   <section class="page" aria-label="ニュース">
@@ -363,34 +428,6 @@ input::placeholder { color: var(--muted); opacity: .8; }
     </div></div>
   </section>
 
-  <section class="page" aria-label="設定">
-    <div class="page-inner"><div class="cols">
-      <div class="col">
-        <h2>壁紙</h2>
-        <div class="seg" id="wallSeg">
-          <button class="btn" type="button" data-wall="photos">自分の写真</button>
-          <button class="btn" type="button" data-wall="scenery">山なみ</button>
-          <button class="btn" type="button" data-wall="world">世界の絶景</button>
-        </div>
-        <p class="note" id="wallNote"></p>
-        <h2 style="margin-top:14px">写真を追加 <small id="photoCount"></small></h2>
-        <input type="file" id="photoFile" accept="image/*" multiple hidden>
-        <div class="rm-row"><button class="btn" type="button" id="photoAdd">写真を選ぶ</button></div>
-        <p class="rm-msg" id="photoMsg"></p>
-        <div class="ph-grid" id="phGrid"></div>
-      </div>
-      <div class="col wide">
-        <h2>ルーティン</h2>
-        <ul class="rt-list" id="rtList"></ul>
-        <div class="rm-row"><button class="btn" type="button" id="rtAdd">＋ 追加</button><button class="btn primary" type="button" id="rtSave">保存</button></div>
-        <p class="rm-msg" id="rtMsg"></p>
-        <h2 style="margin-top:14px">接続</h2>
-        <div class="rm-row"><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reload">最新版に更新</button><button class="btn" type="button" id="reinstall">ホーム画面に入れ直す</button></div>
-        <p class="rm-msg" id="reinstallMsg"></p>
-        <p class="note" id="verNote"></p>
-      </div>
-    </div></div>
-  </section>
 </main>
 
 <div class="sheet-bg" id="sheetBg" hidden>
@@ -439,7 +476,6 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <button type="button" aria-label="予定とルーティン"></button>
   <button type="button" aria-label="ツール"></button>
   <button type="button" aria-label="ニュース"></button>
-  <button type="button" aria-label="設定"></button>
 </nav>
 
 <script>
@@ -466,7 +502,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 00:45";
+  const VERSION = "2026-11-15 01:02";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -512,7 +548,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
   });
   $("cfgCancel").addEventListener("click", showBoard);
   $("openSetup").addEventListener("click", () => showSetup(true));
-  $("toSettings").addEventListener("click", () => goTo(4));
+  $("toSettings").addEventListener("click", () => goToTool("sys"));
+  $("toolAlarm").addEventListener("click", () => openAlarm());
   $("reload").addEventListener("click", () => location.reload());
   // 古い設定のアイコンを作り直すため、設定入りのアドレスをコピーする（Safari に貼って開き、共有 →「ホーム画面に追加」）
   $("reinstall").addEventListener("click", async () => {
@@ -548,15 +585,54 @@ input::placeholder { color: var(--muted); opacity: .8; }
 
   /* ---------- ページ送り ---------- */
   const pager = $("pager"), dots = [...$("dots").children];
+  const pages = [...pager.querySelectorAll(".page")], N = pages.length, TOOLS = 2;
   let page = 0;
-  const LAST = 4;
+  const offs = pages.map(() => null);
+  // ページは輪につながる（ホームの左がニュース、ニュースの右がホーム）。
+  // 各ページを「今のページからいくつ隣か」で置く。2つ以上とぶページは動きを付けずに置きかえる（画面を横切らないように）
+  function layoutPages() {
+    pages.forEach((pg, k) => {
+      let o = ((k - page) % N + N) % N; if (o > N / 2) o -= N;
+      if (offs[k] === null || Math.abs(o - offs[k]) > 1) pg.classList.add("jump");
+      pg.style.setProperty("--o", o); offs[k] = o;
+    });
+    requestAnimationFrame(() => requestAnimationFrame(() => pages.forEach((pg) => pg.classList.remove("jump"))));
+  }
   function goTo(i, instant) {
-    page = Math.max(0, Math.min(LAST, i));
+    const to = ((i % N) + N) % N;
+    if (to !== page) closeTool();
+    page = to;
     if (instant) { pager.classList.add("drag"); requestAnimationFrame(() => requestAnimationFrame(() => pager.classList.remove("drag"))); }
-    pager.style.setProperty("--x", `${-page * 100}%`);
+    pager.style.setProperty("--dx", "0px");
+    layoutPages();
     dots.forEach((d, k) => d.setAttribute("aria-current", String(k === page)));
     updateDotsTone();
   }
+  layoutPages();
+  /* ---------- ツールのカード：押すと大きく開く ---------- */
+  let openedTool = null, toolGhost = null;
+  function openTool(name) {
+    const t = document.querySelector(`.tool[data-tool="${name}"]`);
+    if (!t || t === openedTool) return;
+    closeTool();
+    toolGhost = el("div", "tool ghost"); t.before(toolGhost);   // 開いている間もほかのカードが動かないよう、場所を空けておく
+    t.classList.add("open"); openedTool = t; $("toolScrim").hidden = false;
+  }
+  function closeTool() {
+    if (!openedTool) return;
+    openedTool.classList.remove("open"); openedTool = null;
+    if (toolGhost) { toolGhost.remove(); toolGhost = null; }
+    $("toolScrim").hidden = true;
+    if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) document.activeElement.blur();
+  }
+  $("tools").addEventListener("click", (e) => {
+    if (e.target.closest(".tool-x")) { e.stopPropagation(); closeTool(); return; }
+    const t = e.target.closest(".tool");
+    if (t && !t.classList.contains("open") && !t.classList.contains("ghost")) openTool(t.dataset.tool);
+  });
+  $("toolScrim").addEventListener("click", closeTool);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTool(); });
+  function goToTool(name) { goTo(TOOLS); openTool(name); }
   function updateDotsTone() { $("dots").classList.toggle("onphoto", page === 0 && $("home").classList.contains("hasphoto")); }
   dots.forEach((d, k) => d.addEventListener("click", () => goTo(k)));
   document.addEventListener("keydown", (e) => {
@@ -567,6 +643,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   let sw = null;
   pager.addEventListener("pointerdown", (e) => {
     if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || (e.pointerType === "mouse" && e.button !== 0)) return;
+    if (openedTool) return;   // カードを開いている間は横にめくらない
     sw = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), dx: 0, on: false };
   });
   pager.addEventListener("pointermove", (e) => {
@@ -578,15 +655,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
       sw.on = true; pager.classList.add("drag");
       try { pager.setPointerCapture(e.pointerId); } catch (err) {}
     }
-    const edge = (page === 0 && dx > 0) || (page === LAST && dx < 0);
-    sw.dx = edge ? dx * .25 : dx;
-    pager.style.setProperty("--x", `calc(${-page * 100}% + ${sw.dx}px)`);
+    sw.dx = dx;
+    pager.style.setProperty("--dx", `${dx}px`);
   });
   function endSwipe(e) {
     if (!sw || e.pointerId !== sw.id) return;
     const s0 = sw; sw = null;
     if (!s0.on) return;
     pager.classList.remove("drag");
+    pager.style.setProperty("--dx", "0px");
     const v = s0.dx / Math.max(1, performance.now() - s0.t);   // px/ms
     const far = Math.abs(s0.dx) > pager.clientWidth * .18 || Math.abs(v) > .25;
     goTo(far ? page + (s0.dx < 0 ? 1 : -1) : page);
@@ -943,7 +1020,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
   // 時計の画面：天気→くわしい天気、時計→アラーム、予定→予定の画面、それ以外→次の写真
   $("home").addEventListener("click", (e) => {
-    if (e.target.closest("#timerTag")) goTo(2);
+    if (e.target.closest("#timerTag")) goToTool("tm");
     else if (e.target.closest("#wx")) openWeather();
     else if (e.target.closest("#clock") || e.target.closest("#alarmTag")) openAlarm();
     else if (e.target.closest("#next")) goTo(1);
@@ -1497,6 +1574,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     $("statusText").textContent = "試し表示";
     if (params.get("photo") !== "0") { demoPhotos = [demoPhoto(1), demoPhoto(0)]; nextWall(); setInterval(nextWall, 8000); }
     const p = Number(params.get("page")); if (p) goTo(p, true);
+    if (params.get("tool")) goToTool(params.get("tool"));   // 確認用
     if (params.get("sheet") === "wx") openWeather(); else if (params.get("sheet") === "alarm") { alarm = { time: "07:00", daily: true }; renderAlarmTag(); openAlarm(); }   // 確認用
     if (params.get("sheet") === "1") { const e = data.events[0]; openSheet({ kind: "ev", e, s: new Date(e.start), allDay: false }); }   // 確認用
     return;
