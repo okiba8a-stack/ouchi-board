@@ -223,20 +223,33 @@ input::placeholder { color: var(--muted); opacity: .8; }
 /* ツール：小さなカードを1ページに並べ、押すと大きく開く */
 .tools { flex: 1; min-height: 0; width: 100%; max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 16px; }
 @media (orientation: portrait), (max-width: 900px) { .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.tool { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 10px; background: rgba(16,18,22,.38); border: 1px solid rgba(255,255,255,.12); border-radius: 24px; padding: 18px 20px; box-shadow: 0 10px 40px rgba(0,0,0,.18); cursor: pointer; }
-.tool:not(.open):active { background: rgba(16,18,22,.5); }
+.tool { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 10px; background: rgba(16,18,22,.38); border: 1px solid rgba(255,255,255,.12); border-radius: 24px; padding: 16px 18px; box-shadow: 0 10px 40px rgba(0,0,0,.18); }
+.tools .wide { grid-column: span 2; }
 .tool-head { flex: none; display: flex; align-items: center; gap: 8px; }
 .tool-head h2 { flex: 1; min-width: 0; }
-.tool-x { display: none; width: 44px; height: 44px; margin: -8px -8px -8px 0; border: 0; border-radius: 50%; background: var(--soft); color: var(--ink); font: inherit; font-size: 24px; line-height: 1; cursor: pointer; }
+.tool-x { flex: none; display: grid; place-items: center; width: 44px; height: 44px; margin: -10px -10px -10px 0; border: 0; border-radius: 50%; background: var(--soft); color: var(--ink); cursor: pointer; padding: 0; }
+.tool-x:active { background: rgba(255,255,255,.28); }
+.tool-x svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tool-x .i-close, .tool.open .tool-x .i-open { display: none; }
+.tool.open .tool-x .i-close { display: block; }
 .tool-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
-.tool:not(.open) .tool-body { flex: 1; overflow: hidden; pointer-events: none; zoom: .8; -webkit-mask-image: linear-gradient(#000 72%, transparent); mask-image: linear-gradient(#000 72%, transparent); }
+.tool-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.tool-body::-webkit-scrollbar { display: none; }
+.tool-body h2 { margin-top: 6px; }
 .tool.ghost { visibility: hidden; }
 .tool.open { position: absolute; z-index: 12; top: var(--pad-t); bottom: var(--pad-b); left: 0; right: 0; margin: 0 auto; width: min(960px, calc(100% - var(--pad-l) - var(--pad-r))); cursor: auto; background: rgba(20,22,26,.98); padding: 24px 28px; animation: toolIn .18s ease-out; }
-.tool.open .tool-x { display: grid; place-items: center; }
-.tool.open .tool-body { flex: 1; overflow-y: auto; }
 .tool-scrim { position: absolute; inset: 0; z-index: 11; background: rgba(0,0,0,.45); }
 @keyframes toolIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
 .rm-row.wrap { flex-wrap: wrap; }
+/* カードが狭いとき：週間天気は天気の文字を隠し、ルーティンの曜日は小さくして折り返す */
+.tool { container-type: inline-size; }
+@container (max-width: 320px) {
+  .wk { grid-template-columns: 64px 30px minmax(0,1fr); }
+  .wk .desc { display: none; }
+  .wk .t { justify-self: end; }
+  .rt .days { flex-wrap: wrap; gap: 2px; }
+  .rt .days button { width: 29px; height: 29px; font-size: 12px; }
+}
 @media (max-width: 640px) { .tools { gap: 10px; } .tool { padding: 14px 14px; border-radius: 18px; } .tool.open { padding: 18px 16px; } }
 .chk .box, .rm-item .done::before { border-color: rgba(255,255,255,.55); }
 .ev .time { font-size: 20px; }
@@ -350,7 +363,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <section class="page" aria-label="ツール">
     <div class="page-inner"><div class="tools" id="tools">
       <div class="tool" data-tool="as">
-        <div class="tool-head"><h2>アシスタント <small id="aiTag"></small></h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-head"><h2>アシスタント <small id="aiTag"></small></h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body">
           <form class="remember" id="asForm" autocomplete="off">
             <div class="rm-row">
@@ -363,7 +376,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         </div>
       </div>
       <div class="tool" data-tool="tm">
-        <div class="tool-head"><h2>タイマー・アラーム</h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-head"><h2>タイマー・アラーム</h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body">
           <div class="seg" id="tmPresets"></div>
           <ul class="tm-list" id="tmList"></ul>
@@ -371,18 +384,18 @@ input::placeholder { color: var(--muted); opacity: .8; }
         </div>
       </div>
       <div class="tool" data-tool="memo">
-        <div class="tool-head"><h2>メモ・買い物 <small id="memoCount"></small></h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-head"><h2>メモ・買い物 <small id="memoCount"></small></h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body">
           <form class="rm-row" id="memoForm" autocomplete="off"><input type="text" id="memoText" placeholder="例：牛乳" enterkeyhint="done" aria-label="メモ" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
           <ul class="chk-list" id="memoList"></ul>
         </div>
       </div>
       <div class="tool" data-tool="wk">
-        <div class="tool-head"><h2>週間天気 <small id="wkPlace"></small></h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-head"><h2>週間天気 <small id="wkPlace"></small></h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body"><ul class="wk-list" id="wkList"></ul></div>
       </div>
-      <div class="tool" data-tool="wall">
-        <div class="tool-head"><h2>壁紙</h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+      <div class="tool wide" data-tool="wall">
+        <div class="tool-head"><h2>壁紙と写真</h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body">
           <div class="seg" id="wallSeg">
             <button class="btn" type="button" data-wall="photos">自分の写真</button>
@@ -390,11 +403,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
             <button class="btn" type="button" data-wall="world">世界の絶景</button>
           </div>
           <p class="note" id="wallNote"></p>
-        </div>
-      </div>
-      <div class="tool" data-tool="photo">
-        <div class="tool-head"><h2>写真 <small id="photoCount"></small></h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
-        <div class="tool-body">
+          <h2>自分の写真 <small id="photoCount"></small></h2>
           <input type="file" id="photoFile" accept="image/*" multiple hidden>
           <div class="rm-row"><button class="btn" type="button" id="photoAdd">写真を選ぶ</button></div>
           <p class="rm-msg" id="photoMsg"></p>
@@ -402,7 +411,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         </div>
       </div>
       <div class="tool" data-tool="rt">
-        <div class="tool-head"><h2>ルーティンの編集</h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-head"><h2>ルーティンの編集</h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body">
           <ul class="rt-list" id="rtList"></ul>
           <div class="rm-row"><button class="btn" type="button" id="rtAdd">＋ 追加</button><button class="btn primary" type="button" id="rtSave">保存</button></div>
@@ -410,7 +419,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         </div>
       </div>
       <div class="tool" data-tool="sys">
-        <div class="tool-head"><h2>接続と更新</h2><button class="tool-x" type="button" aria-label="閉じる">×</button></div>
+        <div class="tool-head"><h2>接続と更新</h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body">
           <p class="note" id="verNote"></p>
           <div class="rm-row wrap"><button class="btn" type="button" id="reload">最新版に更新</button><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reinstall">ホーム画面に入れ直す</button></div>
@@ -502,7 +511,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 01:02";
+  const VERSION = "2026-11-15 01:12";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -617,18 +626,19 @@ input::placeholder { color: var(--muted); opacity: .8; }
     closeTool();
     toolGhost = el("div", "tool ghost"); t.before(toolGhost);   // 開いている間もほかのカードが動かないよう、場所を空けておく
     t.classList.add("open"); openedTool = t; $("toolScrim").hidden = false;
+    t.querySelector(".tool-x").setAttribute("aria-label", "小さくする");
   }
   function closeTool() {
     if (!openedTool) return;
-    openedTool.classList.remove("open"); openedTool = null;
+    openedTool.classList.remove("open"); openedTool.querySelector(".tool-x").setAttribute("aria-label", "大きくする"); openedTool = null;
     if (toolGhost) { toolGhost.remove(); toolGhost = null; }
     $("toolScrim").hidden = true;
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) document.activeElement.blur();
   }
   $("tools").addEventListener("click", (e) => {
-    if (e.target.closest(".tool-x")) { e.stopPropagation(); closeTool(); return; }
-    const t = e.target.closest(".tool");
-    if (t && !t.classList.contains("open") && !t.classList.contains("ghost")) openTool(t.dataset.tool);
+    const x = e.target.closest(".tool-x"); if (!x) return;
+    const t = x.closest(".tool");
+    if (t.classList.contains("open")) closeTool(); else openTool(t.dataset.tool);
   });
   $("toolScrim").addEventListener("click", closeTool);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTool(); });
