@@ -48,6 +48,13 @@ body {
   -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; transition: filter 1.2s;
 }
 body.night { filter: brightness(.5); }
+/* iOS 27 のホーム画面アプリ対策。
+   ・画面の高さが時刻表示の分だけ短く報告されるので、100lvh（画面全体）を使う。
+   ・上端に OS がぼかしをかける。一番上に色を塗った固定の帯（高さ6px以上・幅80%以上・上端から4px以内）を置くと、
+     時刻表示の背景がその色になり、ぼかしが消える。 */
+@supports (height: 100lvh) { html.standalone, html.standalone body { height: 100lvh; } }
+.sbar { display: none; position: fixed; top: 0; left: 0; right: 0; height: max(8px, var(--sa-t)); background: #101114; z-index: 30; pointer-events: none; }
+html.standalone .sbar { display: block; }
 h2 { margin: 0; font-weight: 700; font-size: 13px; letter-spacing: .14em; color: var(--muted); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; font-size: 12px; }
 
@@ -279,6 +286,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <p class="rm-msg" id="cfgMsg"></p>
 </section>
 
+<div class="sbar" aria-hidden="true"></div>
 <div class="backdrop" id="backdrop" hidden></div>
 
 <main class="pager" id="pager" hidden>
@@ -438,19 +446,22 @@ input::placeholder { color: var(--muted); opacity: .8; }
    0 のときは端末に合わせた時刻・電池表示の高さを入れ、中身がその下に入ってぼやけないようにする。 */
 (function(){
   var root = document.documentElement;
+  var standalone = navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+  if (standalone) root.classList.add("standalone");
   function fix(){
-    var standalone = navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
     root.style.removeProperty("--sa-t");
     if (!standalone || !document.body) return;
     var p = document.createElement("div");
     p.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden;height:env(safe-area-inset-top,0px)";
     document.body.appendChild(p); var h = p.getBoundingClientRect().height; p.remove();
+    window.__saDiag = "上端" + Math.round(h) + " 高さ" + window.innerHeight + "/" + screen.height + "×" + screen.width;
     if (h >= 1) return;
     var ipad = Math.min(screen.width, screen.height) >= 700;
     var landscape = window.innerWidth > window.innerHeight;
     var v = ipad ? 32 : (landscape ? 0 : 54);
     if (v) root.style.setProperty("--sa-t", v + "px");
   }
+  fix();
   document.addEventListener("DOMContentLoaded", fix);
   window.addEventListener("resize", fix);
   window.addEventListener("orientationchange", function(){ setTimeout(fix, 300); });
@@ -461,7 +472,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 00:20";
+  const VERSION = "2026-11-15 00:25";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -509,7 +520,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("openSetup").addEventListener("click", () => showSetup(true));
   $("toSettings").addEventListener("click", () => goTo(4));
   $("reload").addEventListener("click", () => location.reload());
-  $("verNote").textContent = "版：" + VERSION;
+  $("verNote").textContent = "版：" + VERSION + (window.__saDiag ? "（" + window.__saDiag + "）" : "");
 
   /* ---------- 裏方（Apps Script）を呼ぶ ---------- */
   async function callApi(q, c) {
