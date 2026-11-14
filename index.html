@@ -23,7 +23,7 @@
   --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --font-serif: var(--font-body);
   --font-num: "Lexend", "Zen Kaku Gothic New", system-ui, sans-serif;
-  --pad-t: max(28px, env(safe-area-inset-top)); --pad-b: max(44px, env(safe-area-inset-bottom));
+  --sa-t: env(safe-area-inset-top, 0px); --pad-t: max(28px, calc(var(--sa-t) + 8px)); --pad-b: max(44px, env(safe-area-inset-bottom));
   --pad-l: max(32px, env(safe-area-inset-left)); --pad-r: max(32px, env(safe-area-inset-right));
   color-scheme: light;
 }
@@ -433,12 +433,35 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <button type="button" aria-label="設定"></button>
 </nav>
 
+<script>
+/* iOS 26.1〜 のホーム画面アプリで env(safe-area-inset-top) が 0 になる不具合への対策（WebKit bug 301994）。
+   0 のときは端末に合わせた時刻・電池表示の高さを入れ、中身がその下に入ってぼやけないようにする。 */
+(function(){
+  var root = document.documentElement;
+  function fix(){
+    var standalone = navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+    root.style.removeProperty("--sa-t");
+    if (!standalone || !document.body) return;
+    var p = document.createElement("div");
+    p.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden;height:env(safe-area-inset-top,0px)";
+    document.body.appendChild(p); var h = p.getBoundingClientRect().height; p.remove();
+    if (h >= 1) return;
+    var ipad = Math.min(screen.width, screen.height) >= 700;
+    var landscape = window.innerWidth > window.innerHeight;
+    var v = ipad ? 32 : (landscape ? 0 : 54);
+    if (v) root.style.setProperty("--sa-t", v + "px");
+  }
+  document.addEventListener("DOMContentLoaded", fix);
+  window.addEventListener("resize", fix);
+  window.addEventListener("orientationchange", function(){ setTimeout(fix, 300); });
+})();
+</script>
 <script src="remind-parse.js"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-13 17:27";
+  const VERSION = "2026-11-15 00:20";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
