@@ -6,7 +6,6 @@
 <title>おうちボード</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="おうちボード">
 <meta name="theme-color" content="#f4f0e8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#151412" media="(prefers-color-scheme: dark)">
@@ -49,11 +48,12 @@ body {
 }
 body.night { filter: brightness(.5); }
 /* iOS 27 のホーム画面アプリ対策。
-   ・画面の高さが時刻表示の分だけ短く報告されるので、100lvh（画面全体）を使う。
-   ・上端に OS がぼかしをかける。一番上に色を塗った固定の帯（高さ6px以上・幅80%以上・上端から4px以内）を置くと、
-     時刻表示の背景がその色になり、ぼかしが消える。 */
-@supports (height: 100lvh) { html.standalone, html.standalone body { height: 100lvh; } }
-.sbar { display: none; position: fixed; top: 0; left: 0; right: 0; height: max(8px, var(--sa-t)); background: #101114; z-index: 30; pointer-events: none; }
+   ・上端のぼかしは、上端から4px下の真ん中に「幅90%以上・背景色つき・高さ10px超の固定の帯」があると消え、
+     時刻表示の背景がその色になる（WebKit の LocalFrameView::fixedContainerEdges）。black-translucent だとこの仕組みが
+     働かないので、状態バーの設定は書かない。帯は background-clip: text で見た目には何も描かない（色は設定から読まれる）。
+   ・black-translucent のころに追加したアイコンは中身が時刻表示の下に入り、高さが短く報告されるので 100lvh を使う。 */
+@supports (height: 100lvh) { html.under-bar, html.under-bar body { height: 100lvh; } }
+.sbar { display: none; position: fixed; top: 0; left: 0; right: 0; height: max(12px, var(--sa-t)); background-color: #101114; -webkit-background-clip: text; background-clip: text; color: transparent; z-index: 30; pointer-events: none; }
 html.standalone .sbar { display: block; }
 h2 { margin: 0; font-weight: 700; font-size: 13px; letter-spacing: .14em; color: var(--muted); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; font-size: 12px; }
@@ -385,7 +385,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <div class="rm-row"><button class="btn" type="button" id="rtAdd">＋ 追加</button><button class="btn primary" type="button" id="rtSave">保存</button></div>
         <p class="rm-msg" id="rtMsg"></p>
         <h2 style="margin-top:14px">接続</h2>
-        <div class="rm-row"><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reload">最新版に更新</button></div>
+        <div class="rm-row"><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reload">最新版に更新</button><button class="btn" type="button" id="reinstall">ホーム画面に入れ直す</button></div>
+        <p class="rm-msg" id="reinstallMsg"></p>
         <p class="note" id="verNote"></p>
       </div>
     </div></div>
@@ -442,29 +443,22 @@ input::placeholder { color: var(--muted); opacity: .8; }
 </nav>
 
 <script>
-/* iOS 26.1〜 のホーム画面アプリで env(safe-area-inset-top) が 0 になる不具合への対策（WebKit bug 301994）。
-   0 のときは端末に合わせた時刻・電池表示の高さを入れ、中身がその下に入ってぼやけないようにする。 */
+/* ホーム画面アプリかどうかと、中身が時刻表示の下に入っているか（古い設定のアイコン）を調べる。 */
 (function(){
   var root = document.documentElement;
   var standalone = navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
   if (standalone) root.classList.add("standalone");
-  function fix(){
-    root.style.removeProperty("--sa-t");
+  function check(){
     if (!standalone || !document.body) return;
     var p = document.createElement("div");
     p.style.cssText = "position:fixed;top:0;left:0;width:0;visibility:hidden;height:env(safe-area-inset-top,0px)";
     document.body.appendChild(p); var h = p.getBoundingClientRect().height; p.remove();
+    root.classList.toggle("under-bar", h >= 1);
     window.__saDiag = "上端" + Math.round(h) + " 高さ" + window.innerHeight + "/" + screen.height + "×" + screen.width;
-    if (h >= 1) return;
-    var ipad = Math.min(screen.width, screen.height) >= 700;
-    var landscape = window.innerWidth > window.innerHeight;
-    var v = ipad ? 32 : (landscape ? 0 : 54);
-    if (v) root.style.setProperty("--sa-t", v + "px");
   }
-  fix();
-  document.addEventListener("DOMContentLoaded", fix);
-  window.addEventListener("resize", fix);
-  window.addEventListener("orientationchange", function(){ setTimeout(fix, 300); });
+  check();
+  document.addEventListener("DOMContentLoaded", check);
+  window.addEventListener("resize", check);
 })();
 </script>
 <script src="remind-parse.js"></script>
@@ -472,7 +466,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 00:25";
+  const VERSION = "2026-11-15 00:45";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -520,6 +514,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("openSetup").addEventListener("click", () => showSetup(true));
   $("toSettings").addEventListener("click", () => goTo(4));
   $("reload").addEventListener("click", () => location.reload());
+  // 古い設定のアイコンを作り直すため、設定入りのアドレスをコピーする（Safari に貼って開き、共有 →「ホーム画面に追加」）
+  $("reinstall").addEventListener("click", async () => {
+    const msg = $("reinstallMsg");
+    if (!cfg) { msg.textContent = "先に接続の設定をしてください。"; return; }
+    const url = location.origin + location.pathname + "?c=" + encodeCfg(cfg);
+    try { await navigator.clipboard.writeText(url); msg.textContent = "アドレスをコピーしました。Safari に貼り付けて開き、共有 →「ホーム画面に追加」をしてから、古いアイコンを消してください。"; }
+    catch (e) { msg.textContent = "コピーできませんでした。このアドレスを Safari で開いてください：" + url; msg.style.wordBreak = "break-all"; }
+  });
   $("verNote").textContent = "版：" + VERSION + (window.__saDiag ? "（" + window.__saDiag + "）" : "");
 
   /* ---------- 裏方（Apps Script）を呼ぶ ---------- */
