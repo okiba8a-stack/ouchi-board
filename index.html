@@ -241,6 +241,26 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .tool-scrim { position: absolute; inset: 0; z-index: 11; background: rgba(0,0,0,.45); }
 @keyframes toolIn { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
 .rm-row.wrap { flex-wrap: wrap; }
+/* 雨雲レーダー（RainViewer の雨雲＋地理院タイル） */
+.radar { position: relative; height: 300px; overflow: hidden; border-radius: 16px; background: #1c2026; flex: none; }
+.rd-layer { position: absolute; left: 50%; top: 50%; width: 768px; height: 768px; transform-origin: 0 0; }
+.rd-layer img { position: absolute; width: 256px; height: 256px; display: block; }
+.rd-base img { filter: invert(1) hue-rotate(180deg) brightness(.75) contrast(.9); }
+.rd-frame { position: absolute; inset: 0; opacity: 0; }
+.rd-frame.on { opacity: .85; }
+.rd-home { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #ffd98a; box-shadow: 0 0 0 3px rgba(0,0,0,.45); }
+.rd-bar { position: absolute; left: 12px; right: 12px; bottom: 10px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.18); }
+.rd-bar i { display: block; height: 100%; border-radius: 2px; background: #fff; width: 0; }
+.rd-msg { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; color: var(--muted); }
+/* 地震情報の帯 */
+.quake { position: fixed; z-index: 25; left: 50%; top: calc(var(--sa-t) + 14px); transform: translateX(-50%); width: min(760px, calc(100% - 32px)); display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 18px; border-radius: 20px; background: rgba(28,31,37,.95); color: #fff; border: 1px solid rgba(255,255,255,.16); box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+.quake.strong { background: rgba(122,34,22,.96); border-color: rgba(255,180,160,.4); }
+.quake .sc { flex: none; font-family: var(--font-num); font-size: 15px; font-weight: 700; line-height: 1.1; text-align: center; background: rgba(255,255,255,.14); border-radius: 12px; padding: 6px 10px; }
+.quake .sc b { display: block; font-size: 26px; font-weight: 500; }
+.quake .tx { flex: 1; min-width: 0; font-size: 16px; line-height: 1.4; }
+.quake .tx small { display: block; font-size: 13px; opacity: .75; }
+.quake button { flex: none; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgba(255,255,255,.12); color: #fff; font: inherit; font-size: 22px; cursor: pointer; }
+.rain-line { display: block; font-weight: 700; }
 /* カードが狭いとき：週間天気は天気の文字を隠し、ルーティンの曜日は小さくして折り返す */
 .tool { container-type: inline-size; }
 @container (max-width: 320px) {
@@ -392,7 +412,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       </div>
       <div class="tool" data-tool="wk">
         <div class="tool-head"><h2>週間天気 <small id="wkPlace"></small></h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
-        <div class="tool-body"><ul class="wk-list" id="wkList"></ul></div>
+        <div class="tool-body"><ul class="wk-list" id="wkList"></ul><div class="rm-row"><button class="btn" type="button" id="toolRadar">雨雲レーダー・24時間の天気</button></div></div>
       </div>
       <div class="tool wide" data-tool="wall">
         <div class="tool-head"><h2>壁紙と写真</h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
@@ -456,6 +476,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
     <p class="note" id="wxComment"></p>
     <h2>24時間の天気</h2>
     <div class="hours" id="wxHours"></div>
+    <h2>雨雲レーダー <small id="rdTime"></small></h2>
+    <div class="radar" id="radar"></div>
+    <p class="note">過去2時間の雨雲（10分おき）。黄色の点が日野市。RainViewer ・ 地理院タイル</p>
     <div class="rm-row"><span class="spacer"></span><button class="btn" type="button" id="wxClose">閉じる</button></div>
   </div>
 </div>
@@ -479,6 +502,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     <div class="rm-row"><button class="btn primary" type="button" id="ringStop" style="flex:1;min-height:64px;font-size:20px">止める</button></div>
   </div>
 </div>
+
+<div class="quake" id="quake" hidden role="alert"></div>
 
 <nav class="dots" id="dots" hidden aria-label="画面の切り替え">
   <button type="button" aria-label="時計" aria-current="true"></button>
@@ -511,7 +536,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 01:12";
+  const VERSION = "2026-11-15 01:19";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -559,6 +584,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("openSetup").addEventListener("click", () => showSetup(true));
   $("toSettings").addEventListener("click", () => goToTool("sys"));
   $("toolAlarm").addEventListener("click", () => openAlarm());
+  $("toolRadar").addEventListener("click", () => openWeather());
   $("reload").addEventListener("click", () => location.reload());
   // 古い設定のアイコンを作り直すため、設定入りのアドレスをコピーする（Safari に貼って開き、共有 →「ホーム画面に追加」）
   $("reinstall").addEventListener("click", async () => {
@@ -769,8 +795,11 @@ input::placeholder { color: var(--muted); opacity: .8; }
         const c = el("div"); c.append(el("div", null, `${new Date(h.time).getHours()}時`), icon(WX(h.code)[1]), el("div", "t", `${Math.round(h.temp)}°`), el("div", "p", `${h.pop ?? "—"}%`)); hrs.append(c);
       });
     } else hrs.append(el("p", "empty", data ? "天気を取得できませんでした。" : "読み込み中…"));
-    const cm = $("comment");
-    if (data && data.comment) { cm.textContent = data.comment; cm.hidden = false; } else cm.hidden = true;
+    const cm = $("comment"); cm.textContent = "";
+    const rl = w ? rainLine(w) : "";
+    if (rl) cm.append(el("span", "rain-line", rl));
+    if (data && data.comment) cm.append(document.createTextNode(data.comment));
+    cm.hidden = !cm.textContent;
     $("place").textContent = (data && data.place) || "";
   }
 
@@ -1240,6 +1269,34 @@ input::placeholder { color: var(--muted); opacity: .8; }
     sheetCall({ action: "delete" }, "削除しています…");
   });
 
+  /* ---------- 雨の降り出し・止む時刻（発表された毎時の降水確率から、決まった文で） ---------- */
+  const SNOW = new Set([71, 73, 75, 77, 85, 86]);
+  function rainLine(w, nowArg) {
+    const now = nowArg || new Date(), h0 = new Date(now); h0.setMinutes(0, 0, 0);
+    const hrs = (w.hours || []).filter((h) => new Date(h.time) >= h0).slice(0, 24);
+    if (!hrs.length) return "";
+    const wet = (h) => (h.pop ?? 0) >= 50;
+    const kind = (h) => (SNOW.has(h.code) ? "雪" : "雨");
+    const d0 = new Date(now); d0.setHours(0, 0, 0, 0);
+    const when = (h) => {
+      const t = new Date(h.time), dd = Math.round((new Date(t).setHours(0, 0, 0, 0) - d0) / 864e5);
+      return (dd === 1 ? "あしたの" : dd >= 2 ? "あさっての" : "") + t.getHours() + "時";
+    };
+    if (wet(hrs[0])) {
+      const i = hrs.findIndex((h) => !wet(h));
+      return i < 0 ? `${kind(hrs[0])}はしばらく続く予報です。` : `${kind(hrs[0])}は${when(hrs[i])}ごろまでの予報です。`;
+    }
+    const i = hrs.slice(0, 18).findIndex(wet);
+    if (i >= 0) {
+      const h = hrs[i], t = new Date(h.time);
+      const laundry = t.getDate() === now.getDate() && now.getHours() >= 6 && t.getHours() >= 9 && t.getHours() <= 19 ? `洗濯物は${t.getHours() - 1}時までに取りこんで。` : "";
+      return `${when(h)}ごろから${kind(h)}の予報（降水確率${h.pop}%）。${laundry}`;
+    }
+    const hr = now.getHours();
+    if (hr >= 5 && hr < 12 && hrs.slice(0, 18 - hr).every((h) => (h.pop ?? 0) < 30)) return "夕方まで雨の心配はなさそう。洗濯日和です。";
+    return "";
+  }
+
   /* ---------- くわしい天気 ---------- */
   function openWeather() {
     const w = data && data.weather; if (!w || !w.today) return;
@@ -1250,13 +1307,65 @@ input::placeholder { color: var(--muted); opacity: .8; }
       txt.append(el("div", "lbl", lbl), el("div", "desc", desc), el("div", "temps", `最高 ${Math.round(d.max)}° / 最低 ${Math.round(d.min)}°　降水 ${d.pop ?? "—"}%`));
       box.append(icon(kind), txt); sum.append(box);
     });
-    $("wxComment").textContent = data.comment || ""; $("wxPlace").textContent = (data.place || "") + " ・ Open-Meteo";
+    $("wxComment").textContent = (rainLine(w) + " " + (data.comment || "")).trim(); $("wxPlace").textContent = (data.place || "") + " ・ Open-Meteo";
     const hrs = $("wxHours"); hrs.textContent = "";
     const now = new Date(); now.setMinutes(0, 0, 0);
     (w.hours || []).filter((h) => new Date(h.time) >= now).slice(0, 24).forEach((h) => {
       const c = el("div"); c.append(el("div", null, `${new Date(h.time).getHours()}時`), icon(WX(h.code)[1]), el("div", "t", `${Math.round(h.temp)}°`), el("div", "p", `${h.pop ?? "—"}%`)); hrs.append(c);
     });
     $("wxBg").hidden = false;
+    openRadar();
+  }
+
+  /* ---------- 雨雲レーダー（RainViewer：拡大は7段階まで。地理院タイルを下地にして拡大表示） ---------- */
+  const RD = { lat: 35.6713, lon: 139.3951, z: 7, scale: 2.2 };
+  let rdTimer = null, rdMaps = null;
+  async function openRadar() {
+    const box = $("radar"); clearInterval(rdTimer); box.textContent = ""; $("rdTime").textContent = "";
+    // 拡大 z のタイル 3×3 を、日野市が枠の真ん中に来るように置く。下地は1段細かいタイルで、くっきり見せる
+    const grid = (z) => {
+      const n = 2 ** z, la = RD.lat * Math.PI / 180;
+      const fx = (RD.lon + 180) / 360 * n, fy = (1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * n;
+      return { z, fx, fy, tx: Math.floor(fx), ty: Math.floor(fy), scale: RD.scale / 2 ** (z - RD.z) };
+    };
+    const layer = (cls, g) => {
+      const L = el("div", "rd-layer " + cls);
+      L.style.transform = `scale(${g.scale}) translate(${-(g.fx - g.tx + 1) * 256}px, ${-(g.fy - g.ty + 1) * 256}px)`;
+      return L;
+    };
+    const tiles = (parent, g, url) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const im = new Image(); im.alt = ""; im.decoding = "async"; im.src = url(g.tx + dx, g.ty + dy);
+      im.style.left = (dx + 1) * 256 + "px"; im.style.top = (dy + 1) * 256 + "px"; parent.append(im);
+    } };
+    const gb = grid(RD.z + 1), gr = grid(RD.z);
+    const base = layer("rd-base", gb); tiles(base, gb, (x, y) => `https://cyberjapandata.gsi.go.jp/xyz/pale/${gb.z}/${x}/${y}.png`);
+    const frames = layer("rd-frames", gr);
+    const msg = el("div", "rd-msg", "雨雲を読み込み中…"), bar = el("div", "rd-bar"), barI = el("i");
+    bar.append(barI); box.append(base, frames, el("div", "rd-home"), bar, msg);
+    try {
+      if (!rdMaps || Date.now() - rdMaps.at > 5 * 60 * 1000) {
+        const r = await fetch("https://api.rainviewer.com/public/weather-maps.json", { cache: "no-store" });
+        rdMaps = { at: Date.now(), d: await r.json() };
+      }
+      const d = rdMaps.d, past = (d.radar && d.radar.past) || [];
+      if (!past.length) throw new Error("no frames");
+      const fs = past.map((f) => { const F = el("div", "rd-frame"); tiles(F, gr, (x, y) => `${d.host}${f.path}/256/${RD.z}/${x}/${y}/2/1_1.png`); frames.append(F); return { F, time: f.time }; });
+      msg.remove();
+      let k = fs.length - 1, hold = 0;
+      const show = () => {
+        fs.forEach((f, j) => f.F.classList.toggle("on", j === k));
+        const t = new Date(fs[k].time * 1000);
+        $("rdTime").textContent = `${t.getHours()}:${String(t.getMinutes()).padStart(2, "0")}` + (k === fs.length - 1 ? "（最新）" : "");
+        barI.style.width = ((k + 1) / fs.length * 100) + "%";
+      };
+      show();
+      rdTimer = setInterval(() => {
+        if ($("wxBg").hidden) { clearInterval(rdTimer); return; }
+        if (k === fs.length - 1 && hold++ < 3) return;   // 最新の画面で少し止める
+        hold = 0; k = (k + 1) % fs.length; show();
+      }, 600);
+      k = 0; show();
+    } catch (e) { msg.textContent = "雨雲を取得できませんでした。"; }
   }
   $("wxClose").addEventListener("click", () => { $("wxBg").hidden = true; });
   ["wxBg", "alBg"].forEach((id) => $(id).addEventListener("pointerdown", (e) => { if (e.target === $(id)) $(id).hidden = true; }));
@@ -1561,7 +1670,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   function demoData() {
     const d0 = new Date(); d0.setHours(0, 0, 0, 0);
     const at = (days, h, m) => new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + days, h || 0, m || 0);
-    const hours = []; for (let i = 0; i < 72; i++) hours.push({ time: toLocalInput(at(0, i)), code: i % 24 < 6 ? 1 : 0, temp: 13 + 6 * Math.sin(((i % 24) - 9) / 24 * Math.PI * 2), pop: i > 40 ? 40 : 0 });
+    const hours = []; for (let i = 0; i < 72; i++) hours.push({ time: toLocalInput(at(0, i)), code: i % 24 < 6 ? 1 : 0, temp: 13 + 6 * Math.sin(((i % 24) - 9) / 24 * Math.PI * 2), pop: i >= 15 && i <= 18 ? 70 : i > 40 ? 40 : 0 });
     const ev = (title, s, mins, loc) => ({ title, allDay: false, start: s.toISOString(), end: new Date(s.getTime() + mins * 60000).toISOString(), location: loc || "" });
     return {
       ok: true, date: today, place: "東京都日野市", at: new Date().toISOString(),
@@ -1577,6 +1686,37 @@ input::placeholder { color: var(--muted); opacity: .8; }
     };
   }
 
+  /* ---------- 地震情報の帯（P2P地震情報 API v2。どこかで震度5弱以上か、東京都で震度2以上のとき、15分間出す。緊急地震速報ではなく発生後の情報） ---------- */
+  const SCALE = { 10: "1", 20: "2", 30: "3", 40: "4", 45: "5弱", 46: "5弱以上", 50: "5強", 55: "6弱", 60: "6強", 70: "7" };
+  const TSUNAMI = { None: "津波の心配なし", Unknown: "津波は調査中", Checking: "津波は調査中", NonEffective: "若干の海面変動のおそれ（被害の心配なし）", Watch: "津波注意報", Warning: "津波警報" };
+  const QUAKE_SHOW = 15 * 60 * 1000;
+  let quakeHidden = store.get("ouchi.quakeHidden") || "";
+  function quakeOf(q) {
+    const e = q.earthquake || {}, h = e.hypocenter || {};
+    const t = new Date(String(e.time || q.time || "").replace(/\//g, "-").replace(" ", "T") + "+09:00");
+    const tokyo = Math.max(-1, ...(q.points || []).filter((p) => p.pref === "東京都").map((p) => p.scale || -1));
+    return { id: String(t.getTime()), t, max: e.maxScale ?? -1, tokyo, name: h.name || "", mag: h.magnitude, tsunami: e.domesticTsunami };
+  }
+  function showQuake(x) {
+    const box = $("quake"); box.textContent = "";
+    const sc = el("div", "sc"); sc.append(document.createTextNode("最大震度"), el("b", null, SCALE[x.max] || "—"));
+    const tx = el("div", "tx");
+    const hm = `${x.t.getHours()}:${String(x.t.getMinutes()).padStart(2, "0")}`;
+    tx.append(document.createTextNode(`${hm} ${x.name || "震源は調査中"}${x.mag > 0 ? `　M${x.mag.toFixed(1)}` : ""}`));
+    tx.append(el("small", null, [x.tokyo >= 10 ? `東京都の最大震度 ${SCALE[x.tokyo]}` : "", TSUNAMI[x.tsunami] || ""].filter(Boolean).join("　")));
+    const b = el("button", null, "×"); b.type = "button"; b.setAttribute("aria-label", "閉じる");
+    b.addEventListener("click", () => { box.hidden = true; quakeHidden = x.id; store.set("ouchi.quakeHidden", x.id); });
+    box.append(sc, tx, b); box.classList.toggle("strong", x.max >= 40 || x.tokyo >= 30); box.hidden = false;
+  }
+  async function checkQuake() {
+    try {
+      const r = await fetch("https://api.p2pquake.net/v2/history?codes=551&limit=5", { cache: "no-store" });
+      const list = (await r.json()).map(quakeOf).filter((x) => Date.now() - x.t < QUAKE_SHOW && (x.max >= 45 || x.tokyo >= 20));
+      const x = list[0];
+      if (x && x.id !== quakeHidden) showQuake(x); else $("quake").hidden = true;
+    } catch (e) { /* 取れないときは何も出さない */ }
+  }
+
   /* ---------- 起動 ---------- */
   setInterval(tick, 10000);
   if (DEMO) {
@@ -1586,6 +1726,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const p = Number(params.get("page")); if (p) goTo(p, true);
     if (params.get("tool")) goToTool(params.get("tool"));   // 確認用
     if (params.get("sheet") === "wx") openWeather(); else if (params.get("sheet") === "alarm") { alarm = { time: "07:00", daily: true }; renderAlarmTag(); openAlarm(); }   // 確認用
+    if (params.get("quake") === "1") showQuake({ id: "demo", t: new Date(), max: 40, tokyo: 30, name: "千葉県北西部", mag: 5.1, tsunami: "None" });   // 確認用
     if (params.get("sheet") === "1") { const e = data.events[0]; openSheet({ kind: "ev", e, s: new Date(e.start), allDay: false }); }   // 確認用
     return;
   }
@@ -1596,6 +1737,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   if (wallMode !== "photos" || !photoIds.length) nextWall();
   setInterval(nextWall, PHOTO_EVERY);
   refresh(); setInterval(refresh, 5 * 60 * 1000);
+  checkQuake(); setInterval(checkQuake, 60 * 1000);
   { const p0 = Number(params.get("page")); if (p0) goTo(p0, true); }
 })();
 </script>
