@@ -597,7 +597,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:14";
+  const VERSION = "2026-11-15 09:16";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -841,6 +841,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
   /* ---------- 表示 ---------- */
   let data = store.get("ouchi.last") || null;
   let warnList = [];   // 気象警報（checkWarn で更新）
+  // 地点。裏方（スクリプトプロパティ PLACE・LAT・LON）が返す値を使う。古い裏方なら日野市
+  function loc() {
+    return { place: (data && data.place) || "東京都日野市", lat: Number(data && data.lat) || 35.6713, lon: Number(data && data.lon) || 139.3951 };
+  }
   let checks = (data && data.date === today && data.checks) || {};
 
   function renderWeather() {
@@ -1410,6 +1414,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   let rdTimer = null, rdMaps = null;
   async function openRadar() {
     const box = $("radar"); clearInterval(rdTimer); box.textContent = ""; $("rdTime").textContent = "";
+    { const L = loc(); RD.lat = L.lat; RD.lon = L.lon; }
     // 拡大 z のタイル 3×3 を、日野市が枠の真ん中に来るように置く。下地は1段細かいタイルで、くっきり見せる
     const grid = (z) => {
       const n = 2 ** z, la = RD.lat * Math.PI / 180;
@@ -1648,7 +1653,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   });
   renderGomi();
 
-  /* ---------- 気象警報・注意報（気象庁 bosai の令和8年の体系。日野市＝1321200。10分おき） ---------- */
+  /* ---------- 気象警報・注意報（気象庁 bosai の令和8年の体系。地点の市区町村、10分おき） ---------- */
   const WARN = (() => {
     const t = {}, put = (codes, base, names) => codes.forEach((c, i) => { if (c) t[c] = { name: names[i], level: [50, 40, 30, 20][i] }; });
     put(["33", "43", "03", "10"], "大雨", ["レベル5大雨特別警報", "レベル4大雨危険警報", "レベル3大雨警報", "レベル2大雨注意報"]);
@@ -1669,12 +1674,36 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (!it) return [];
     return (it.kinds || []).filter((k) => k.code && WARN[k.code] && !/解除|なし/.test(k.status || "")).map((k) => WARN[k.code]).sort((a, b) => b.level - a.level);
   }
+  // 「東京都日野市」→ 気象庁の区域（市区町村 1321200・府県 130000）。area.json から引き、端末に覚えておく
+  const PREFS = "北海道 青森県 岩手県 宮城県 秋田県 山形県 福島県 茨城県 栃木県 群馬県 埼玉県 千葉県 東京都 神奈川県 新潟県 富山県 石川県 福井県 山梨県 長野県 岐阜県 静岡県 愛知県 三重県 滋賀県 京都府 大阪府 兵庫県 奈良県 和歌山県 鳥取県 島根県 岡山県 広島県 山口県 徳島県 香川県 愛媛県 高知県 福岡県 佐賀県 長崎県 熊本県 大分県 宮崎県 鹿児島県 沖縄県".split(" ");
+  function areaFrom(area, place) {
+    const pi = PREFS.findIndex((p) => place.startsWith(p)); if (pi < 0) return null;
+    const pre = String(pi + 1).padStart(2, "0"), rest = place.slice(PREFS[pi].length);
+    let best = null;
+    Object.entries(area.class20s || {}).forEach(([code, v]) => {
+      if (!code.startsWith(pre)) return;
+      const nm = v.name.replace(/(北部|南部|東部|西部|中部)$/, "");
+      if (rest.startsWith(nm) && (!best || nm.length > best.len)) best = { code, len: nm.length };
+    });
+    if (!best) return null;
+    let c15 = area.class20s[best.code].parent, c10 = area.class15s[c15] && area.class15s[c15].parent, off = area.class10s[c10] && area.class10s[c10].parent;
+    return off ? { place, area: best.code, office: off } : null;
+  }
+  async function warnArea() {
+    const place = loc().place;
+    if (place === "東京都日野市") return { place, area: "1321200", office: "130000" };
+    const c = store.get("ouchi.area"); if (c && c.place === place) return c;
+    const r = await fetch("https://www.jma.go.jp/bosai/common/const/area.json"); if (!r.ok) return null;
+    const a = areaFrom(await r.json(), place); if (a) store.set("ouchi.area", a);
+    return a;
+  }
   async function checkWarn() {
     if (DEMO) { warnList = params.get("warn") === "1" ? [WARN["03"], WARN["14"]] : []; renderNext(); return; }
     try {
-      const r = await fetch("https://www.jma.go.jp/bosai/warning/data/r8/130000.json", { cache: "no-store" });
+      const A = await warnArea(); if (!A) return;
+      const r = await fetch(`https://www.jma.go.jp/bosai/warning/data/r8/${A.office}.json`, { cache: "no-store" });
       if (!r.ok) return;
-      warnList = warnFrom(await r.json(), "1321200");
+      warnList = warnFrom(await r.json(), A.area);
       renderNext();
     } catch (e) {}
   }
@@ -1831,10 +1860,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
   });
 
   /* ---------- 週間天気 ---------- */
-  // 日の出・日の入り（日野市。端末で計算）
+  // 日の出・日の入り（地点は loc()。端末で計算）
   function sunLine(d) {
     if (!window.sunTimes) return "";
-    const t = window.sunTimes(d || new Date(), 35.6713, 139.3951);
+    const L = loc(), t = window.sunTimes(d || new Date(), L.lat, L.lon);
     return t.rise ? `日の出 ${hm(t.rise)} ・ 日の入り ${hm(t.set)}` : "";
   }
   function renderWeek() {

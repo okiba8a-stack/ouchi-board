@@ -7,9 +7,12 @@
  * 3. デプロイ → ウェブアプリ（実行：自分／アクセス：全員）
  */
 
-const PLACE = '東京都日野市';
-const LAT = 35.6713;
-const LON = 139.3951;
+// 地点。引っ越したら、Apps Script の「プロジェクトの設定 → スクリプト プロパティ」に
+// PLACE（例：東京都日野市）・LAT・LON を入れれば、コードを直さずに切り替わる（ボードの天気・警報・日の出も追従する）
+const PROPS_ = PropertiesService.getScriptProperties();
+const PLACE = PROPS_.getProperty('PLACE') || '東京都日野市';
+const LAT = Number(PROPS_.getProperty('LAT')) || 35.6713;
+const LON = Number(PROPS_.getProperty('LON')) || 139.3951;
 const TZ = 'Asia/Tokyo';
 const NEWS_RSS = 'https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja';
 // アシスタントに Claude を使うときのモデル（スクリプトプロパティ ANTHROPIC_API_KEY を入れたときだけ使う）
@@ -126,6 +129,8 @@ function board_(dateStr) {
     ok: true,
     date: date,
     place: PLACE,
+    lat: LAT,
+    lon: LON,
     events: safe_(() => getEvents_(date)),
     reminders: safe_(() => getReminders_(date)) || [],
     weather: weather,
@@ -195,7 +200,8 @@ function remind_(title, startIso, minutes) {
 
 function getWeather_() {
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('weather');
+  const ck = 'weather:' + LAT + ',' + LON;   // 地点を変えたらすぐ切り替わるように
+  const hit = cache.get(ck);
   if (hit) return JSON.parse(hit);
   const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + LAT + '&longitude=' + LON +
     '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
@@ -217,7 +223,7 @@ function getWeather_() {
   }));
   const days = (d.daily && d.daily.time || []).map((t, i) => day(i));
   const w = { today: day(0), tomorrow: day(1), days: days, hours: hours.slice(0, 72), fetchedAt: new Date().toISOString() };
-  cache.put('weather', JSON.stringify(w), 30 * 60);
+  cache.put(ck, JSON.stringify(w), 30 * 60);
   return w;
 }
 
