@@ -216,7 +216,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .credit { position: absolute; right: var(--pad-r); bottom: max(14px, env(safe-area-inset-bottom)); font-size: 11px; color: #fff; opacity: .7; text-shadow: 0 1px 6px rgba(0,0,0,.6); max-width: 46%; text-align: right; }
 /* 解説のある写真：右下の説明を押せる札にする */
 .credit.has-info { z-index: 3; opacity: .92; font-size: 13px; padding: 8px 12px; margin: -8px -12px; border-radius: 14px; cursor: pointer; }
-.credit.has-info::after { content: "　くわしく ›"; opacity: .7; font-size: 11px; }
+.credit.has-info .cr-name { display: block; font-size: clamp(17px, 2vw, 24px); font-weight: 700; line-height: 1.3; }
+.credit.has-info .cr-sub { font-size: 13px; opacity: .85; }
+.credit.has-info .cr-sub::after { content: "　くわしく ›"; opacity: .7; font-size: 11px; }
 .credit.has-info:active { background: rgba(0,0,0,.35); }
 .info-sheet { width: min(720px, 100%); }
 .info-title { font-size: 26px; font-weight: 700; line-height: 1.3; }
@@ -727,14 +729,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-16_0011"></script>
-<script src="gomi.js?v=2026-11-16_0011"></script>
-<script src="sun.js?v=2026-11-16_0011"></script>
+<script src="remind-parse.js?v=2026-11-16_0020"></script>
+<script src="gomi.js?v=2026-11-16_0020"></script>
+<script src="sun.js?v=2026-11-16_0020"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-16 00:11";
+  const VERSION = "2026-11-16 00:20";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔（設定がないとき）
   function photoEvery() { const m = Number(cfg && cfg.photoMin); return m > 0 ? m * 60000 : PHOTO_EVERY; }
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
@@ -1283,8 +1285,13 @@ input::placeholder { color: var(--muted); opacity: .8; }
       $("backdrop").style.backgroundImage = `url("${url}")`;
       topColor = measureTop(this); tintBar();
       if (!topColor && /^https?:/.test(url)) fetch(url, { mode: "cors" }).then((r) => r.blob()).then((b) => createImageBitmap(b)).then((bmp) => { const c = measureTop(bmp); if (c && shown === (key || url)) { topColor = c; tintBar(); } }).catch(() => {});
-      $("credit").textContent = caption || "";
       wallInfo = info || null; $("credit").classList.toggle("has-info", !!wallInfo);
+      const cr = $("credit"); cr.textContent = "";
+      if (wallInfo) {
+        // 名前を大きく、その下に「国 ・ グループ」。押すとくわしい解説
+        const nm = wallInfo.title.length > 30 ? wallInfo.title.slice(0, 29) + "…" : wallInfo.title;
+        cr.append(el("span", "cr-name", nm), el("span", "cr-sub", [wallInfo.country, wallInfo.group].filter(Boolean).join(" ・ ")));
+      } else cr.textContent = caption || "";
       $("home").classList.add("hasphoto"); updateDotsTone();
     };
     // よそのサイトの写真（世界の絶景＝Bing）は CORS で読み、上端の色を測れるようにする。許可していないサイトなら指定なしで読み直す
@@ -2423,7 +2430,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   // ウィキデータの一覧（30日おぼえる。[ファイル名, 名前, ひとこと, 日本語版の記事名, 緯度, 経度]）
   async function wikiList(g) {
     if (wikiLists[g]) return wikiLists[g];
-    const key = "__list:" + g, hit = await idbDo("readonly", (st) => st.get(key));
+    const key = "__list3:" + g, hit = await idbDo("readonly", (st) => st.get(key));
     if (hit && hit.items && hit.items.length && Date.now() - hit.at < 30 * 864e5) return (wikiLists[g] = hit.items);
     try {
       const d = await getJson("https://query.wikidata.org/sparql?format=json&query=" + encodeURIComponent(WD_BASE(WIKI[g].wd)), 70000);
@@ -2433,11 +2440,22 @@ input::placeholder { color: var(--muted); opacity: .8; }
         const file = decodeURIComponent(b.image.value.split("/Special:FilePath/")[1] || ""); if (!file || /\.(svg|gif|tiff?|webm|ogv)$/i.test(file)) return;
         const art = b.article ? decodeURIComponent(b.article.value.split("/wiki/")[1] || "").replace(/_/g, " ") : "";
         const name = b.itemLabel ? b.itemLabel.value : ""; if (/^Q\d+$/.test(name)) return;
-        items.push([file, name, b.itemDescription ? b.itemDescription.value : "", art, b.lat ? Number(b.lat.value) : null, b.lon ? Number(b.lon.value) : null]);
+        items.push([file, name, b.itemDescription ? b.itemDescription.value : "", art, b.lat ? Number(b.lat.value) : null, b.lon ? Number(b.lon.value) : null, b.item.value.split("/").pop()]);
       });
       if (items.length) { await idbDo("readwrite", (st) => st.put({ at: Date.now(), items }, key)); return (wikiLists[g] = items); }
     } catch (e) {}
     return (wikiLists[g] = (hit && hit.items) || []);   // 取れなければ古い一覧を使う
+  }
+  // 国名（日本の名所は都道府県名）。取れなければ空
+  async function wikiPlace(qid, pref) {
+    if (!/^Q\d+$/.test(qid || "")) return "";
+    const q = pref
+      ? `SELECT DISTINCT ?l WHERE { wd:${qid} wdt:P131* ?p. ?p wdt:P31 wd:Q50337; rdfs:label ?l. FILTER(lang(?l)="ja") } LIMIT 4`
+      : `SELECT DISTINCT ?l WHERE { wd:${qid} wdt:P17 ?c. ?c rdfs:label ?l. FILTER(lang(?l)="ja") } LIMIT 4`;
+    try {
+      const d = await getJson("https://query.wikidata.org/sparql?format=json&query=" + encodeURIComponent(q), 8000);
+      return d.results.bindings.map((b) => b.l.value).slice(0, 3).join("・");
+    } catch (e) { return ""; }
   }
   function wikiPick(page, g, base) {
     const ii = page && page.imageinfo && page.imageinfo[0]; if (!ii || !ii.thumburl) return null;
@@ -2447,7 +2465,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const md = ii.extmetadata || {}, val = (k) => (md[k] ? stripHtml(md[k].value) : "");
     const fileTitle = String(page.title || "").replace(/^File:/, "").replace(/\.[^.]+$/, "").replace(/_/g, " ");
     const info = { group: WIKI[g].label, title: (base && base[1]) || fileTitle, desc: (base && base[2]) || "", article: (base && base[3]) || "",
-      lat: base ? base[4] : null, lon: base ? base[5] : null, about: base ? "" : val("ImageDescription").slice(0, 700),
+      lat: base ? base[4] : null, lon: base ? base[5] : null, country: "", qid: (base && base[6]) || "", about: base ? "" : val("ImageDescription").slice(0, 700),
       artist: val("Artist").slice(0, 80), license: val("LicenseShortName"), page: ii.descriptionurl, url: ii.thumburl };
     info.caption = `${info.title.length > 34 ? info.title.slice(0, 33) + "…" : info.title} ・ ${info.group}`;
     return info;
@@ -2465,7 +2483,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
           wikiSeen.push(it[0]); if (wikiSeen.length > 300) wikiSeen.shift();
           const d = await getJson(COMMONS + "&titles=" + encodeURIComponent("File:" + it[0]));
           const info = wikiPick(Object.values((d.query && d.query.pages) || {})[0], g, it);
-          if (info) return info;
+          if (info) { info.country = await wikiPlace(info.qid, g === "jpn"); return info; }
         } else {
           const q = (wikiQueue[g] = wikiQueue[g] || []);
           if (!q.length) {
@@ -2482,7 +2500,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   // 解説の窓
   async function openInfo() {
     const w = wallInfo; if (!w) return;
-    $("infoGroup").textContent = w.group; $("infoTitle").textContent = w.title; $("infoDesc").textContent = w.desc; $("infoDesc").hidden = !w.desc;
+    $("infoGroup").textContent = [w.group, w.country].filter(Boolean).join(" ・ "); $("infoTitle").textContent = w.title; $("infoDesc").textContent = w.desc; $("infoDesc").hidden = !w.desc;
     $("infoBody").textContent = w.about || (w.article ? "解説を読み込んでいます…" : "");
     $("infoCredit").textContent = "写真：" + [w.artist, w.license, "ウィキメディア・コモンズ"].filter(Boolean).join(" ・ ");
     const set = (id, href) => { $(id).hidden = !href; if (href) $(id).href = href; };
