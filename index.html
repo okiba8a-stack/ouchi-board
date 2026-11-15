@@ -164,6 +164,10 @@ body.night .clock .sec { opacity: .45; }
 .since-list .btn { min-height: 40px; padding: 6px 14px; font-size: 14px; }
 .since-list .x { background: transparent; border: 0; color: var(--muted); font-size: 13px; min-width: 44px; min-height: 40px; cursor: pointer; }
 .since-list .x.armed, .btn.armed { color: var(--warn); font-weight: 700; }
+.mail-brief { margin: 8px 0 4px; padding: 12px 14px; border-radius: 14px; background: rgba(255,217,138,.10); border: 1px solid rgba(255,217,138,.25); }
+.mail-brief .mb-h { font-size: 12px; letter-spacing: .1em; color: #ffd98a; font-weight: 700; margin-bottom: 4px; }
+.mail-brief .mb-h small { font-weight: 400; letter-spacing: 0; color: var(--muted); margin-left: 6px; }
+.mail-brief .mb-t { font-size: 15px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow-y: auto; }
 .mail-list .t small { display: block; font-size: 12px; color: var(--muted); }
 .mail-list li.imp .t::before { content: "大事"; display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 6px; font-size: 11px; color: #14261c; background: #ffd98a; vertical-align: 2px; }
 .mail-list a.btn { text-decoration: none; display: inline-grid; place-items: center; }
@@ -461,6 +465,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       </div>
       <div class="col c3">
         <h2>メール <small id="mailCount"></small></h2>
+        <div class="mail-brief" id="mailBrief" hidden><div class="mb-h">けさのまとめ <small id="mailBriefAt"></small></div><div class="mb-t" id="mailBriefText"></div></div>
         <ul class="since-list mail-list" id="mailList"></ul>
         <div class="rm-row wrap"><a class="btn" id="mailOpen" href="https://mail.google.com/mail/u/0/#inbox" target="_blank" rel="noopener">Gmail を開く</a><button class="btn" type="button" id="mailAllRead">受信トレイを全部既読</button></div>
         <p class="rm-msg" id="mailMsg"></p>
@@ -668,14 +673,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_2228"></script>
-<script src="gomi.js?v=2026-11-15_2228"></script>
-<script src="sun.js?v=2026-11-15_2228"></script>
+<script src="remind-parse.js?v=2026-11-15_2237"></script>
+<script src="gomi.js?v=2026-11-15_2237"></script>
+<script src="sun.js?v=2026-11-15_2237"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 22:28";
+  const VERSION = "2026-11-15 22:37";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -2173,6 +2178,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
   /* ---------- メール（予定とルーティンの画面。裏方の getMail_。既読は action=mailRead） ---------- */
   const gmailUrl = (id) => "https://mail.google.com/mail/u/0/#inbox/" + encodeURIComponent(id);
   function renderMail() {
+    // 毎朝のルーチンのまとめ（24時間以内のものだけ）
+    const mb = data && data.mailBrief, fresh = mb && mb.text && Date.now() - Date.parse(mb.at) < 24 * 3600000;
+    $("mailBrief").hidden = !fresh;
+    if (fresh) { const d = new Date(mb.at); $("mailBriefAt").textContent = `${hm(d)} Claude`; $("mailBriefText").textContent = mb.text.trim(); }
     const ul = $("mailList"); ul.textContent = "";
     const ml = data && data.mail;
     if (!ml) { $("mailCount").textContent = ""; ul.append(el("li", "empty", DEMO ? "" : "メールを出すには、裏方（Apps Script）の更新と setup の実行が必要です。")); return; }
@@ -2430,6 +2439,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       reminders: [{ id: "r1", title: "牛乳を買う", start: at(0, 23, 50).toISOString(), done: true }, { id: "r2", title: "パンチェッタのラップを外す", start: at(7, 9).toISOString() }],
       routines: [{ id: "a", title: "風呂掃除", days: [], order: 1 }, { id: "b", title: "皿洗い", days: [], order: 2 }, { id: "c", title: "洗濯", days: [1, 3, 5], order: 3 }],
       checks: { a: true }, streaks: { a: 6, b: 2 },
+      mailBrief: { text: "大事なメール 2件\n・研究室：ゼミ資料の締切は 11/20（金）。カレンダーに入れました\n・楽天カード：11/27 に 89,900円の引き落とし\nほか：宣伝 14件、ログイン通知 3件", at: new Date().toISOString() },
       mail: { unread: 12, important: [{ id: "d1", from: "研究室", subject: "ゼミ資料の締切について", at: new Date().toISOString() }, { id: "d2", from: "教務課", subject: "履修登録の確認", at: new Date().toISOString() }], recent: [{ id: "d3", from: "楽天カード", subject: "お支払予定金額のご案内", at: new Date(Date.now() - 864e5).toISOString() }] },
       news: ["ニュースの見出しがここに並びます", "見出しをタップすると記事が開きます", "少し大きめの文字で表示します", "一度に8件まで", "三分さわらなければ時計の画面に戻ります", "横にスワイプで画面が切り替わります"].map((t) => ({ title: t, source: "試し表示", url: "" })),
     };

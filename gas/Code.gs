@@ -147,6 +147,7 @@ function board_(dateStr) {
     photos: safe_(getPhotoIds_) || [],
     memos: safe_(getMemos_) || [],
     mail: safe_(getMail_),
+    mailBrief: safe_(getMailBrief_),
     ai: !!PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY'),
     at: new Date().toISOString(),
   };
@@ -691,6 +692,27 @@ function getMail_() {
 }
 
 /** メールを既読にする。id があればそのスレッド、all=1 なら受信トレイの未読をすべて（100件ずつ） */
+/* 毎朝のルーチン（claude.ai の「毎朝のGmail確認」）が、ドライブのフォルダ「おうちボード けさのメール」に
+   その日のまとめのテキストファイル（けさのメール YYYY-MM-DD）を作る。いちばん新しいものをボードに出し、7日より古いものはゴミ箱へ。 */
+const BRIEF_FOLDER = 'おうちボード けさのメール';
+function getMailBrief_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('mailBrief');
+  if (hit) return JSON.parse(hit);
+  const it = DriveApp.getFoldersByName(BRIEF_FOLDER);
+  if (!it.hasNext()) return null;
+  const files = [], fi = it.next().getFiles();
+  while (fi.hasNext()) files.push(fi.next());
+  if (!files.length) return null;
+  files.sort((a, b) => b.getDateCreated() - a.getDateCreated());
+  const old = Date.now() - 7 * 86400000;
+  files.slice(1).forEach((f) => { if (f.getDateCreated().getTime() < old) f.setTrashed(true); });
+  const f = files[0];
+  const text = f.getMimeType() === MimeType.GOOGLE_DOCS ? '' : f.getBlob().getDataAsString('UTF-8');
+  const out = { text: String(text).slice(0, 2000), at: f.getDateCreated().toISOString(), title: f.getName() };
+  cache.put('mailBrief', JSON.stringify(out), 10 * 60);
+  return out;
+}
+
 function mailRead_(id, all) {
   if (all) {
     for (let i = 0; i < 20; i++) {
