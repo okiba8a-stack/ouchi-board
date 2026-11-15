@@ -106,6 +106,8 @@ h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; f
 .next { margin-top: 18px; font-size: clamp(15px, 1.7vw, 19px); display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
 .next .tag { font-size: 11px; letter-spacing: .25em; opacity: .7; }
 .next .warn-on { color: #ffe08a; font-weight: 700; }
+.next .left { font-size: .82em; opacity: .75; margin-left: -6px; }
+.next .left.soon { color: #ffe08a; opacity: 1; font-weight: 700; }
 .next .warn-on.strong { color: #ff9f86; }
 .next .when { font-family: var(--font-num); font-weight: 300; }
 .comment { margin-top: 6px; font-size: 14px; opacity: .8; max-width: 40em; }
@@ -595,7 +597,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:13";
+  const VERSION = "2026-11-15 09:14";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -893,8 +895,13 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const cur = tEv.find((x) => !x.allDay && x.s <= now && x.en > now);
     const nxt = tEv.find((x) => !x.allDay && x.s > now) || uEv[0];
     const allDay = tEv.filter((x) => x.allDay).map((x) => x.e.title).join("・");
-    if (cur) box.append(el("span", "tag", "いま"), el("span", null, cur.e.title));
-    else if (nxt) box.append(el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title));
+    if (cur) box.append(el("span", "tag", "いま"), el("span", null, cur.e.title), el("span", "left", `〜${hm(cur.en)}`));
+    else if (nxt) {
+      box.append(el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title));
+      // 2時間以内なら残り時間（「あと25分」「あと1時間10分」）
+      const mins = Math.ceil((nxt.s - now) / 60000);
+      if (!nxt.allDay && mins > 0 && mins <= 120) box.append(el("span", "left" + (mins <= 15 ? " soon" : ""), "あと" + (mins >= 60 ? Math.floor(mins / 60) + "時間" + (mins % 60 ? (mins % 60) + "分" : "") : mins + "分")));
+    }
     if (allDay) box.append(el("span", "tag", "きょう"), el("span", null, allDay));
     if (warnList.length) box.append(el("span", "tag", "気象"), el("span", warnList[0].level >= 30 ? "warn-on strong" : "warn-on", warnList.map((w) => w.name).join("・")));
     // 裏方から2時間以上読めていないときは、古い情報だと分かるように
@@ -1947,7 +1954,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         days: [2, 3, 61, 1, 0, 2, 80].map((code, i) => ({ date: ymd(at(i)), code, max: 19 - i, min: 8 + (i % 3), pop: [0, 20, 80, 10, 0, 20, 60][i] })) },
       memos: [{ id: "m1", text: "牛乳", done: false }, { id: "m2", text: "単3電池", done: false }, { id: "m3", text: "ラップ", done: true }],
       comment: "傘はいらなそうです。朝晩と日中の気温差が大きいので、羽織るものを一枚。",
-      events: [ev("ゼミ", at(0, 13), 90, "研究室"), ev("買い出し", at(0, 23, 30), 20), { title: "燃えるごみ", allDay: true, start: ymd(at(0)), end: ymd(at(1)) }, ev("歯医者", at(1, 9), 30), ev("輪講", at(5, 15, 30), 90)],
+      events: [...(params.get("soon") ? [ev("オンライン面談", new Date(Date.now() + 25 * 60000), 30)] : []), ev("ゼミ", at(0, 13), 90, "研究室"), ev("買い出し", at(0, 23, 30), 20), { title: "燃えるごみ", allDay: true, start: ymd(at(0)), end: ymd(at(1)) }, ev("歯医者", at(1, 9), 30), ev("輪講", at(5, 15, 30), 90)],
       reminders: [{ id: "r1", title: "牛乳を買う", start: at(0, 23, 50).toISOString(), done: true }, { id: "r2", title: "パンチェッタのラップを外す", start: at(7, 9).toISOString() }],
       routines: [{ id: "a", title: "風呂掃除", days: [], order: 1 }, { id: "b", title: "皿洗い", days: [], order: 2 }, { id: "c", title: "洗濯", days: [1, 3, 5], order: 3 }],
       checks: { a: true },
