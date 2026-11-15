@@ -59,9 +59,10 @@ body.night .photo, body.night .photo.on { transform: none; transition: opacity 2
      そこで写真だけを上端まで出し、文字とボタンはぼかしの範囲（上端＋40px）より下に置く。
    ・時刻表示（白い文字）が明るい写真でも読めるよう、上端にうすい影を敷く。 */
 @supports (height: 100lvh) { html.under-bar, html.under-bar body { height: 100lvh; } }
-html.standalone.under-bar { --pad-t: calc(var(--sa-t) + 40px); }
-.topshade { display: none; position: fixed; top: 0; left: 0; right: 0; height: calc(var(--sa-t) + 40px); background-image: linear-gradient(rgba(0,0,0,.38), rgba(0,0,0,0)); z-index: 30; pointer-events: none; }
-html.standalone.under-bar .topshade { display: block; }
+/* 実機ではぼかしが40pxより下まで届いたので余裕を多めに。上端の高さが 0 と報告される機種でも 24px とみなす */
+html.standalone { --sa-b: max(var(--sa-t), 24px); --pad-t: calc(var(--sa-b) + 80px); }
+.topshade { display: none; position: fixed; top: 0; left: 0; right: 0; height: calc(var(--sa-b, 0px) + 72px); background-image: linear-gradient(rgba(0,0,0,.38), rgba(0,0,0,0)); z-index: 30; pointer-events: none; }
+html.standalone .topshade { display: block; }
 h2 { margin: 0; font-weight: 700; font-size: 13px; letter-spacing: .14em; color: var(--muted); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; font-size: 12px; }
 
@@ -646,14 +647,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1326"></script>
-<script src="gomi.js?v=2026-11-15_1326"></script>
-<script src="sun.js?v=2026-11-15_1326"></script>
+<script src="remind-parse.js?v=2026-11-15_1333"></script>
+<script src="gomi.js?v=2026-11-15_1333"></script>
+<script src="sun.js?v=2026-11-15_1333"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 13:26";
+  const VERSION = "2026-11-15 13:33";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
