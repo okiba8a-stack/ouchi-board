@@ -2445,7 +2445,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
     return (wikiLists[g] = (hit && hit.items) || []);   // 取れなければ古い一覧を使う
   }
   // 国名（日本の名所は都道府県名）。取れなければ空
-  async function wikiPlace(qid, pref) {
+  async function wikiPlace(qid, g) {
+    const pref = g === "jpn";
+    if (g === "art" && /^Q\d+$/.test(qid || "")) {   // 名画は作者名（日本語名がなければ英語名）
+      try {
+        const d = await getJson("https://query.wikidata.org/sparql?format=json&query=" + encodeURIComponent(`SELECT DISTINCT ?l WHERE { wd:${qid} wdt:P170 ?c. OPTIONAL{?c rdfs:label ?ja. FILTER(lang(?ja)="ja")} OPTIONAL{?c rdfs:label ?en. FILTER(lang(?en)="en")} BIND(COALESCE(?ja, ?en) AS ?l) FILTER(BOUND(?l)) } LIMIT 3`), 8000);
+        return d.results.bindings.map((b) => b.l.value).slice(0, 2).join("・");
+      } catch (e) { return ""; }
+    }
     if (!/^Q\d+$/.test(qid || "")) return "";
     const q = pref
       ? `SELECT DISTINCT ?l WHERE { wd:${qid} wdt:P131* ?p. ?p wdt:P31 wd:Q50337; rdfs:label ?l. FILTER(lang(?l)="ja") } LIMIT 4`
@@ -2481,7 +2488,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
           wikiSeen.push(it[0]); if (wikiSeen.length > 300) wikiSeen.shift();
           const d = await getJson(COMMONS + "&titles=" + encodeURIComponent("File:" + it[0]));
           const info = wikiPick(Object.values((d.query && d.query.pages) || {})[0], g, it);
-          if (info) { info.country = await wikiPlace(info.qid, g === "jpn"); return info; }
+          if (info) { info.country = await wikiPlace(info.qid, g); return info; }
         } else {
           const q = (wikiQueue[g] = wikiQueue[g] || []);
           if (!q.length) {
