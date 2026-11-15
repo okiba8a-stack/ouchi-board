@@ -1991,15 +1991,16 @@ input::placeholder { color: var(--muted); opacity: .8; }
     };
   }
 
-  /* ---------- 地震情報の帯（P2P地震情報 API v2。どこかで震度5弱以上か、東京都で震度2以上のとき、15分間出す。緊急地震速報ではなく発生後の情報） ---------- */
+  /* ---------- 地震情報の帯（P2P地震情報 API v2。どこかで震度5弱以上か、地点の都道府県で震度2以上のとき、15分間出す。緊急地震速報ではなく発生後の情報） ---------- */
   const SCALE = { 10: "1", 20: "2", 30: "3", 40: "4", 45: "5弱", 46: "5弱以上", 50: "5強", 55: "6弱", 60: "6強", 70: "7" };
   const TSUNAMI = { None: "津波の心配なし", Unknown: "津波は調査中", Checking: "津波は調査中", NonEffective: "若干の海面変動のおそれ（被害の心配なし）", Watch: "津波注意報", Warning: "津波警報" };
   const QUAKE_SHOW = 15 * 60 * 1000;
   let quakeHidden = store.get("ouchi.quakeHidden") || "";
+  const myPref = () => PREFS.find((p) => loc().place.startsWith(p)) || "東京都";   // 地点の都道府県
   function quakeOf(q) {
     const e = q.earthquake || {}, h = e.hypocenter || {};
     const t = new Date(String(e.time || q.time || "").replace(/\//g, "-").replace(" ", "T") + "+09:00");
-    const tokyo = Math.max(-1, ...(q.points || []).filter((p) => p.pref === "東京都").map((p) => p.scale || -1));
+    const tokyo = Math.max(-1, ...(q.points || []).filter((p) => p.pref === myPref()).map((p) => p.scale || -1));
     return { id: String(t.getTime()), t, max: e.maxScale ?? -1, tokyo, name: h.name || "", mag: h.magnitude, tsunami: e.domesticTsunami };
   }
   function showQuake(x) {
@@ -2008,7 +2009,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const tx = el("div", "tx");
     const hm = `${x.t.getHours()}:${String(x.t.getMinutes()).padStart(2, "0")}`;
     tx.append(document.createTextNode(`${hm} ${x.name || "震源は調査中"}${x.mag > 0 ? `　M${x.mag.toFixed(1)}` : ""}`));
-    tx.append(el("small", null, [x.tokyo >= 10 ? `東京都の最大震度 ${SCALE[x.tokyo]}` : "", TSUNAMI[x.tsunami] || ""].filter(Boolean).join("　")));
+    tx.append(el("small", null, [x.tokyo >= 10 ? `${myPref()}の最大震度 ${SCALE[x.tokyo]}` : "", TSUNAMI[x.tsunami] || ""].filter(Boolean).join("　")));
     const b = el("button", null, "×"); b.type = "button"; b.setAttribute("aria-label", "閉じる");
     b.addEventListener("click", () => { box.hidden = true; quakeHidden = x.id; store.set("ouchi.quakeHidden", x.id); });
     box.append(sc, tx, b); box.classList.toggle("strong", x.max >= 40 || x.tokyo >= 30); box.hidden = false;
