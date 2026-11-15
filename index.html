@@ -595,7 +595,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:12";
+  const VERSION = "2026-11-15 09:13";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -804,7 +804,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     renderAlarmTag(); checkAlarm(d);
     const h = d.getHours();
     document.body.classList.toggle("night", h >= 23 || h < 6);
-    if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); refresh(); }
+    if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); renderGomi(); renderSince(); renderWeek(); refresh(); loadHolidays(); }
     else { renderNext(); renderReminders(); }
   }
 
@@ -897,6 +897,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
     else if (nxt) box.append(el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title));
     if (allDay) box.append(el("span", "tag", "きょう"), el("span", null, allDay));
     if (warnList.length) box.append(el("span", "tag", "気象"), el("span", warnList[0].level >= 30 ? "warn-on strong" : "warn-on", warnList.map((w) => w.name).join("・")));
+    // 裏方から2時間以上読めていないときは、古い情報だと分かるように
+    const age = data.at ? Date.now() - Date.parse(data.at) : 0;
+    if (!DEMO && age > 2 * 3600000) box.append(el("span", "tag", "注意"), el("span", "warn-on", `${dayStr(new Date(data.at))} ${hm(new Date(data.at))} から更新できていません`));
     const sd = sinceDue();
     if (sd.length) box.append(el("span", "tag", "そろそろ"), el("span", null, sd.map((x) => x.t).join("・")));
     const g = gomiNotice(now);
@@ -1243,7 +1246,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (DEMO || location.protocol === "file:") return;
     try {
       const r = await (await fetch("version.json?" + Date.now(), { cache: "no-store" })).json();
-      const busy = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.querySelector(".sheet-bg:not([hidden])") || rtDraft;
+      const busy = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.querySelector(".sheet-bg:not([hidden]), .tool.open") || rtDraft;
       if (r.version && r.version !== VERSION && !busy) location.reload();
     } catch (e) {}
   }
