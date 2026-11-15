@@ -651,7 +651,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:59";
+  const VERSION = "2026-11-15 10:27";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -2296,6 +2296,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
 
   /* ---------- 起動 ---------- */
   setInterval(tick, 10000);
+  // つながらないときも前回の画面を出す（sw.js）。つながり直したらすぐ読み直す
+  if ("serviceWorker" in navigator && location.protocol !== "file:" && !DEMO) navigator.serviceWorker.register("sw.js").catch(() => {});
+  window.addEventListener("online", () => { refresh(); checkWarn(); loadHolidays(); });
   if (DEMO) {
     data = demoData(); checks = data.checks; showBoard(); tick(); render();
     if (params.get("ask")) setTimeout(() => ask(params.get("ask")), 300);   // 確認用
