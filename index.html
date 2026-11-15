@@ -652,14 +652,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1414"></script>
-<script src="gomi.js?v=2026-11-15_1414"></script>
-<script src="sun.js?v=2026-11-15_1414"></script>
+<script src="remind-parse.js?v=2026-11-15_1419"></script>
+<script src="gomi.js?v=2026-11-15_1419"></script>
+<script src="sun.js?v=2026-11-15_1419"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 14:14";
+  const VERSION = "2026-11-15 14:19";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1135,7 +1135,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const c = topColor || [35, 38, 43];
     const mix = (v, k) => Math.round(page === 0 ? v * (1 - .42) + k * .42 : v * .5);
     const col = page === 0 && !$("home").classList.contains("hasphoto") ? getComputedStyle($("home")).backgroundColor : `rgb(${mix(c[0], 12)}, ${mix(c[1], 10)}, ${mix(c[2], 8)})`;
-    $("sbar").style.backgroundColor = col;
+    const old = $("sbar");
+    if (old.style.backgroundColor === col) return;
+    // iOS は固定の帯の色を、帯が新しく置かれたときに読み直すので、色を変えるたびに作り直す
+    const bar = old.cloneNode(false); bar.style.backgroundColor = col; old.replaceWith(bar);
+    // ページの色の指定も合わせる（iOS が帯の色に使うことがある）
+    let tc = document.querySelector('meta[name="theme-color"]:not([media])');
+    if (!tc) { document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove()); tc = document.createElement("meta"); tc.name = "theme-color"; document.head.append(tc); }
+    tc.content = col;
   }
   // key が今と同じなら何もしない（同じ絵をフェードし直さない）
   function showPhoto(url, caption, key) {
