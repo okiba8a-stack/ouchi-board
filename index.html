@@ -101,6 +101,8 @@ h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; f
 .date .sub { font-size: .6em; opacity: .7; margin-left: 14px; letter-spacing: .12em; }
 .next { margin-top: 18px; font-size: clamp(15px, 1.7vw, 19px); display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
 .next .tag { font-size: 11px; letter-spacing: .25em; opacity: .7; }
+.next .warn-on { color: #ffe08a; font-weight: 700; }
+.next .warn-on.strong { color: #ff9f86; }
 .next .when { font-family: var(--font-num); font-weight: 300; }
 .comment { margin-top: 6px; font-size: 14px; opacity: .8; max-width: 40em; }
 .icon .sun { fill: var(--sun); } .icon .cloud { fill: var(--muted); opacity: .6; } .icon .drop { fill: var(--rain); } .icon .snow { fill: var(--rain); opacity: .7; } .icon .bolt { fill: var(--sun); }
@@ -576,7 +578,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:03";
+  const VERSION = "2026-11-15 09:07";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -816,6 +818,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 
   /* ---------- 表示 ---------- */
   let data = store.get("ouchi.last") || null;
+  let warnList = [];   // 気象警報（checkWarn で更新）
   let checks = (data && data.date === today && data.checks) || {};
 
   function renderWeather() {
@@ -871,6 +874,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (cur) box.append(el("span", "tag", "いま"), el("span", null, cur.e.title));
     else if (nxt) box.append(el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title));
     if (allDay) box.append(el("span", "tag", "きょう"), el("span", null, allDay));
+    if (warnList.length) box.append(el("span", "tag", "気象"), el("span", warnList[0].level >= 30 ? "warn-on strong" : "warn-on", warnList.map((w) => w.name).join("・")));
     const g = gomiNotice(now);
     if (g) box.append(el("span", "tag gomi", g[0]), el("span", null, g[1]));
     const due = liveReminders().filter((r) => !r.done && new Date(r.start) <= endOfToday()).map((r) => r.title).join("・");
@@ -1357,7 +1361,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       txt.append(el("div", "lbl", lbl), el("div", "desc", desc), el("div", "temps", `最高 ${Math.round(d.max)}° / 最低 ${Math.round(d.min)}°　降水 ${d.pop ?? "—"}%`));
       box.append(icon(kind), txt); sum.append(box);
     });
-    const rl = rainLine(w); $("wxComment").textContent = (rl + " " + baseComment(rl)).trim(); $("wxPlace").textContent = [data.place, sunLine(), "Open-Meteo"].filter(Boolean).join(" ・ ");
+    const rl = rainLine(w); $("wxComment").textContent = ((warnList.length ? "発表中：" + warnList.map((x) => x.name).join("・") + "。 " : "") + rl + " " + baseComment(rl)).trim(); $("wxPlace").textContent = [data.place, sunLine(), "Open-Meteo"].filter(Boolean).join(" ・ ");
     const hrs = $("wxHours"); hrs.textContent = "";
     const now = new Date(); now.setMinutes(0, 0, 0);
     (w.hours || []).filter((h) => new Date(h.time) >= now).slice(0, 24).forEach((h) => {
@@ -1567,8 +1571,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     } catch (e) { asReply("できませんでした：" + e.message); }
   }
   /* ---------- ごみの日（規則は cfg.gomi に文のまま持つ。入れ直しのアドレスにも入る） ---------- */
-  const DEMO_GOMI = ["燃えるごみ 月 木 8:30まで", "プラスチック 水", "資源ごみ 第2・第4 金", "びん・缶 第1・第3 火"].join(String.fromCharCode(10));
-  const gomiRules = () => { const src = (cfg && cfg.gomi) || (DEMO ? DEMO_GOMI : ""); return window.Gomi && src ? Gomi.parseGomi(src).rules : []; };
+  function demoGomi() { return ["燃えるごみ 月 木 8:30まで", "プラスチック 水", "資源ごみ 第2・第4 金", "びん・缶 第1・第3 火"].join(String.fromCharCode(10)); }
+  function gomiRules() { const src = (cfg && cfg.gomi) || (DEMO ? demoGomi() : ""); return window.Gomi && src ? Gomi.parseGomi(src).rules : []; }
   // 前の晩（18時〜）は翌日の分、当日は12時まで。[札, 中身] を返す
   function gomiNotice(now) {
     const rules = gomiRules(); if (!rules.length) return null;
@@ -1608,6 +1612,38 @@ input::placeholder { color: var(--muted); opacity: .8; }
     renderGomi(); renderNext();
   });
   renderGomi();
+
+  /* ---------- 気象警報・注意報（気象庁 bosai の令和8年の体系。日野市＝1321200。10分おき） ---------- */
+  const WARN = (() => {
+    const t = {}, put = (codes, base, names) => codes.forEach((c, i) => { if (c) t[c] = { name: names[i], level: [50, 40, 30, 20][i] }; });
+    put(["33", "43", "03", "10"], "大雨", ["レベル5大雨特別警報", "レベル4大雨危険警報", "レベル3大雨警報", "レベル2大雨注意報"]);
+    put(["39", "49", "09", "29"], "土砂", ["レベル5土砂災害特別警報", "レベル4土砂災害危険警報", "レベル3土砂災害警報", "レベル2土砂災害注意報"]);
+    put(["38", "48", "08", "19"], "高潮", ["レベル5高潮特別警報", "レベル4高潮危険警報", "レベル3高潮警報", "レベル2高潮注意報"]);
+    put(["35", "", "05", "15"], "風", ["暴風特別警報", "", "暴風警報", "強風注意報"]);
+    put(["32", "", "02", "13"], "風雪", ["暴風雪特別警報", "", "暴風雪警報", "風雪注意報"]);
+    put(["36", "", "06", "12"], "雪", ["大雪特別警報", "", "大雪警報", "大雪注意報"]);
+    put(["37", "", "07", "16"], "波", ["波浪特別警報", "", "波浪警報", "波浪注意報"]);
+    [["14", "雷"], ["17", "融雪"], ["20", "濃霧"], ["21", "乾燥"], ["22", "なだれ"], ["23", "低温"], ["24", "霜"], ["25", "着氷"], ["26", "着雪"]].forEach(([c, n]) => { t[c] = { name: n + "注意報", level: 20 }; });
+    return t;
+  })();
+  function warnFrom(reports, area) {
+    const list = Array.isArray(reports) ? reports : [reports];
+    const latest = list.filter((r) => r && r.warning).sort((a, b) => String(a.reportDatetime).localeCompare(String(b.reportDatetime))).pop();
+    if (!latest) return [];
+    const it = (latest.warning.class20Items || []).find((a) => a.areaCode === area);
+    if (!it) return [];
+    return (it.kinds || []).filter((k) => k.code && WARN[k.code] && !/解除|なし/.test(k.status || "")).map((k) => WARN[k.code]).sort((a, b) => b.level - a.level);
+  }
+  async function checkWarn() {
+    if (DEMO) { warnList = params.get("warn") === "1" ? [WARN["03"], WARN["14"]] : []; renderNext(); return; }
+    try {
+      const r = await fetch("https://www.jma.go.jp/bosai/warning/data/r8/130000.json", { cache: "no-store" });
+      if (!r.ok) return;
+      warnList = warnFrom(await r.json(), "1321200");
+      renderNext();
+    } catch (e) {}
+  }
+  checkWarn(); setInterval(checkWarn, 10 * 60000);
 
   /* ---------- アシスタントのボタン ---------- */
   $("asChips").addEventListener("click", (e) => {
