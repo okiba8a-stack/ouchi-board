@@ -139,6 +139,7 @@ function board_(dateStr) {
     news: safe_(getNews_),
     routines: getRoutines_(),
     checks: getChecks_(date),
+    streaks: safe_(() => getStreaks_(date)) || {},
     photos: safe_(getPhotoIds_) || [],
     memos: safe_(getMemos_) || [],
     ai: !!PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY'),
@@ -282,6 +283,32 @@ function getRoutines_() {
       daysText.split('').map((ch) => DOW.indexOf(ch)).filter((i) => i >= 0);
     return { id: String(r[0]), title: String(r[1]), days: days, order: Number(r[3]) || 99, active: r[4] !== false && String(r[4]).toUpperCase() !== 'FALSE' };
   });
+}
+
+/** ルーティンの連続記録：やる日（曜日の指定があればその曜日だけ）を、きのうからさかのぼって何回続けたか（きょうの分は画面で足す） */
+function getStreaks_(date) {
+  const rows = getSheet_().getSheetByName('checks').getDataRange().getValues().slice(1);
+  const done = {};
+  rows.forEach((r) => {
+    if (!(r[2] === true || String(r[2]).toUpperCase() === 'TRUE')) return;
+    const d = r[0] instanceof Date ? Utilities.formatDate(r[0], TZ, 'yyyy-MM-dd') : String(r[0]).replace(/^'/, '');
+    (done[String(r[1])] = done[String(r[1])] || {})[d] = true;
+  });
+  const out = {};
+  const base = new Date(date + 'T12:00:00+09:00');
+  getRoutines_().forEach((rt) => {
+    const has = done[rt.id] || {};
+    let n = 0;
+    for (let i = 1; i <= 180; i++) {
+      const t = new Date(base.getTime() - i * 86400000);
+      const dow = Number(Utilities.formatDate(t, TZ, 'u')) % 7;   // u は 1=月〜7=日
+      if (rt.days.length && rt.days.indexOf(dow) < 0) continue;
+      if (!has[Utilities.formatDate(t, TZ, 'yyyy-MM-dd')]) break;
+      n++;
+    }
+    if (n >= 1) out[rt.id] = n;
+  });
+  return out;
 }
 
 function getChecks_(date) {
