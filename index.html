@@ -646,14 +646,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1100"></script>
-<script src="gomi.js?v=2026-11-15_1100"></script>
-<script src="sun.js?v=2026-11-15_1100"></script>
+<script src="remind-parse.js?v=2026-11-15_1126"></script>
+<script src="gomi.js?v=2026-11-15_1126"></script>
+<script src="sun.js?v=2026-11-15_1126"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 11:00";
+  const VERSION = "2026-11-15 11:26";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1683,6 +1683,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
       }
     }
     if (/^(きょうの|今日の)?まとめ[?？。]?$|^おはよう|ブリーフィング/.test(t)) { asReply(briefing()); return; }
+    // 端末にある「ときどきやること」「カウントダウン」の名前が入った質問は、ここで答える（例：シーツ交換はいつ？／旅行まであと何日？）
+    if (/いつ|何日|なんにち|まだ|やった|前回|あと/.test(t) && !/リマインド|メモ|予定を|入れて/.test(t)) {
+      const sh = sinceItems().find((x) => t.includes(x.t)), cd = cdItems().find((x) => t.includes(x.t));
+      if (sh) { const n = daysSince(sh.d); asReply(`${sh.t}は${n <= 0 ? "きょう" : n + "日前"}にやりました` + (sh.every ? `（${sh.every}日ごと。${n >= sh.every ? "そろそろです" : "あと" + (sh.every - n) + "日"}）。` : "。")); return; }
+      if (cd) { const n = daysUntil(cd.d); asReply(n === 0 ? `${cd.t}はきょうです。` : `${cd.t}まで、あと${n}日です。`); return; }
+    }
     if (/(ごみ|ゴミ)(の日|は|って|出せる|いつ)/.test(t) && !/メモ|リマインド|\d+時|朝|夜|に出す/.test(t)) {
       const wk = gomiWeekText(7);
       asReply(!gomiRules().length ? "ごみの日はまだ登録されていません。ツールの「ごみの日」に書いてください。" : wk.length ? wk.join("、") + "です。" : "この1週間に出せるごみはありません。");
