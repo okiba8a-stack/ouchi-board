@@ -45,9 +45,11 @@
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body {
   background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 17px; line-height: 1.55;
-  -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; transition: filter 1.2s;
+  -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
 }
-body.night { filter: brightness(.5); }
+/* 夜は黒い半透明の幕を重ねて暗くする（body に filter をかけると、スライドのたびに画面全体を描き直して重い） */
+body::after { content: ""; position: fixed; inset: 0; z-index: 60; background: #000; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 1.2s, visibility 0s 1.2s; }
+body.night::after { opacity: .5; visibility: visible; transition: opacity 1.2s; }
 /* 夜（23〜6時）は時計の画面の写真をほぼ消し、時計だけが見えるように（Echo Show の夜間表示を参考に） */
 body.night .home .photo.on { opacity: .12; }
 body.night .home { background: #151412; }
@@ -67,9 +69,10 @@ h2 { margin: 0; font-weight: 700; font-size: 13px; letter-spacing: .14em; color:
 h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; font-size: 12px; }
 
 /* ページ送り */
-.pager { height: 100%; position: relative; overflow: hidden; touch-action: pan-y; overscroll-behavior: none; --dx: 0px; }
-/* ページは輪につながる。--o は今のページからいくつ隣か（-1 が左、1 が右） */
-.page { position: absolute; inset: 0; overflow: hidden; transform: translateX(calc(var(--o, 0) * 100% + var(--dx))); transition: transform .2s cubic-bezier(.2,.9,.25,1); will-change: transform; }
+.pager { height: 100%; position: relative; overflow: hidden; touch-action: pan-y; overscroll-behavior: none; }
+/* ページは輪につながる。offs は今のページからいくつ隣か（-1 が左、1 が右） */
+/* 位置は JS が各ページの transform に直接書く（親の変数を変えると中の全要素を計算し直してカクつくため）。contain で中の変化を外に広げない */
+.page { position: absolute; inset: 0; overflow: hidden; transform: translate3d(0, 0, 0); transition: transform .2s cubic-bezier(.2,.9,.25,1); will-change: transform; contain: strict; backface-visibility: hidden; }
 .pager.drag .page, .page.jump { transition: none; }
 .page-inner { height: 100%; overflow-y: auto; padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l); scrollbar-width: none; }
 .page-inner::-webkit-scrollbar { display: none; }
@@ -647,14 +650,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1339"></script>
-<script src="gomi.js?v=2026-11-15_1339"></script>
-<script src="sun.js?v=2026-11-15_1339"></script>
+<script src="remind-parse.js?v=2026-11-15_1350"></script>
+<script src="gomi.js?v=2026-11-15_1350"></script>
+<script src="sun.js?v=2026-11-15_1350"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 13:39";
+  const VERSION = "2026-11-15 13:50";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -757,12 +760,22 @@ input::placeholder { color: var(--muted); opacity: .8; }
   const offs = pages.map(() => null);
   // ページは輪につながる（ホームの左がニュース、ニュースの右がホーム）。
   // 各ページを「今のページからいくつ隣か」で置く。2つ以上とぶページは動きを付けずに置きかえる（画面を横切らないように）
+  // 各ページを「となり何枚目か＋指の移動量」の位置に置く
+  function placePages(dx) {
+    pages.forEach((pg, k) => {
+      pg.style.transform = `translate3d(calc(${offs[k] * 100}% + ${dx}px), 0, 0)`;
+      // 2枚以上離れたページは画面に出ないので描かない（重ねて合成する枚数を減らす）
+      pg.style.visibility = Math.abs(offs[k]) > 1 ? "hidden" : "";
+    });
+  }
+  let dragDx = 0, dragRaf = 0;
   function layoutPages() {
     pages.forEach((pg, k) => {
       let o = ((k - page) % N + N) % N; if (o > N / 2) o -= N;
       if (offs[k] === null || Math.abs(o - offs[k]) > 1) pg.classList.add("jump");
-      pg.style.setProperty("--o", o); offs[k] = o;
+      offs[k] = o;
     });
+    placePages(0);
     requestAnimationFrame(() => requestAnimationFrame(() => pages.forEach((pg) => pg.classList.remove("jump"))));
   }
   function goTo(i, instant) {
@@ -770,7 +783,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (to !== page) closeTool();
     page = to;
     if (instant) { pager.classList.add("drag"); requestAnimationFrame(() => requestAnimationFrame(() => pager.classList.remove("drag"))); }
-    pager.style.setProperty("--dx", "0px");
+    cancelAnimationFrame(dragRaf); dragRaf = 0;
     layoutPages();
     dots.forEach((d, k) => d.setAttribute("aria-current", String(k === page)));
     updateDotsTone();
@@ -823,15 +836,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
       sw.on = true; pager.classList.add("drag");
       try { pager.setPointerCapture(e.pointerId); } catch (err) {}
     }
-    sw.dx = dx;
-    pager.style.setProperty("--dx", `${dx}px`);
+    sw.dx = dx; dragDx = dx;
+    // 指の動き（iPad は1秒に120回来る）ごとではなく、描くコマごとに1回だけ動かす
+    if (!dragRaf) dragRaf = requestAnimationFrame(() => { dragRaf = 0; placePages(dragDx); });
   });
   function endSwipe(e) {
     if (!sw || e.pointerId !== sw.id) return;
     const s0 = sw; sw = null;
     if (!s0.on) return;
     pager.classList.remove("drag");
-    pager.style.setProperty("--dx", "0px");
     const v = s0.dx / Math.max(1, performance.now() - s0.t);   // px/ms
     const far = Math.abs(s0.dx) > pager.clientWidth * .18 || Math.abs(v) > .25;
     goTo(far ? page + (s0.dx < 0 ? 1 : -1) : page);
