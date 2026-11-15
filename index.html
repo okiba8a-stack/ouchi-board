@@ -48,6 +48,8 @@ body {
   -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; transition: filter 1.2s;
 }
 body.night { filter: brightness(.5); }
+/* 夜（23〜6時）は時計の画面の写真をほぼ消し、時計だけが見えるように（Echo Show の夜間表示を参考に） */
+body.night .home .photo.on { opacity: .12; }
 /* iOS 26〜27 のホーム画面アプリ対策（2026-11-15 第2版）。
    ・写真を時刻・電池の表示の裏まで出すため black-translucent にする。
    ・このとき iOS は時刻表示の下 約40pt までをぼかす（Liquid Glass の scroll edge effect。ページからは消せない。
@@ -433,6 +435,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <ul class="rm-list" id="rmList"></ul>
         <h2 style="margin-top:14px">これからの天気 <small id="place"></small></h2>
         <div class="hours" id="hours"></div>
+        <h2 style="margin-top:22px">カウントダウン</h2>
+        <ul class="since-list" id="cdList"></ul>
+        <form class="rm-row" id="cdForm" autocomplete="off"><input type="text" id="cdText" placeholder="例：旅行 12/20" enterkeyhint="done" aria-label="カウントダウン" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
       </div>
     </div></div>
   </section>
@@ -625,7 +630,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:27";
+  const VERSION = "2026-11-15 09:29";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -848,7 +853,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     renderAlarmTag(); checkAlarm(d);
     const h = d.getHours();
     document.body.classList.toggle("night", h >= 23 || h < 6);
-    if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); renderNext(); renderGomi(); renderSince(); renderWeek(); refresh(); loadHolidays(); }
+    if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); renderNext(); renderGomi(); renderSince(); renderCd(); renderWeek(); refresh(); loadHolidays(); }
     else { renderNext(); renderReminders(); }
   }
 
@@ -953,6 +958,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     // 裏方から2時間以上読めていないときは、古い情報だと分かるように
     const age = data && data.at ? Date.now() - Date.parse(data.at) : 0;
     if (!DEMO && age > 2 * 3600000) box.append(el("span", "tag", "注意"), el("span", "warn-on", `${dayStr(new Date(data.at))} ${hm(new Date(data.at))} から更新できていません`));
+    const cs = cdSoon()[0];
+    if (cs) box.append(el("span", "tag", cs.n === 0 ? "きょう！" : "あと" + cs.n + "日"), el("span", null, cs.x.t));
     const sd = sinceDue();
     if (sd.length) box.append(el("span", "tag", "そろそろ"), el("span", null, sd.map((x) => x.t).join("・")));
     const g = gomiNotice(now);
@@ -1844,6 +1851,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const due = liveReminders().filter((r) => !r.done && new Date(r.start) <= endOfToday());
     if (due.length) out.push("リマインダーは、" + due.map((r) => r.title).join("、") + "。");
     const g = gomiNotice(now); if (g) out.push((g[0] === "ごみ" ? "きょうは" : "あしたは") + g[1] + "の日です。");
+    cdSoon().forEach((y) => out.push(y.n === 0 ? `きょうは${y.x.t}の日です。` : `${y.x.t}まで、あと${y.n}日です。`));
     const sd = sinceDue(); if (sd.length) out.push("そろそろ" + sd.map((x) => x.t).join("、") + "の時期です。");
     return out.join(" ");
   }
@@ -1895,6 +1903,49 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("calNow").addEventListener("click", () => openCal());
   $("calClose").addEventListener("click", () => { $("calBg").hidden = true; });
   $("calBg").addEventListener("pointerdown", (e) => { if (e.target === $("calBg")) $("calBg").hidden = true; });
+
+  /* ---------- カウントダウン（「旅行 12/20」。cfg.countdown に端末で持つ。過ぎたら消える） ---------- */
+  function cdItems() {
+    if (cfg && Array.isArray(cfg.countdown)) return cfg.countdown;
+    if (DEMO) { const d = new Date(); d.setDate(d.getDate() + 5); const e = new Date(); e.setDate(e.getDate() + 40); return [{ t: "実家に帰る", d: ymd(d) }, { t: "旅行", d: ymd(e) }]; }
+    return [];
+  }
+  function saveCd(list) { cfg = Object.assign({}, cfg || {}, { countdown: list }); if (!DEMO) store.set("ouchi.cfg", cfg); renderCd(); renderNext(); }
+  function daysUntil(d) { return Math.round((new Date(d + "T00:00:00") - new Date(today + "T00:00:00")) / 864e5); }
+  // 「旅行 12/20」「誕生日 1月5日」「卒業 2027/3/20」。年がなく、今年の日付が過ぎていれば来年
+  function parseCd(text) {
+    const s = (window.normalizeJa ? window.normalizeJa(text) : text).replace(/(\d{1,2})月(\d{1,2})日/, "$1/$2");
+    const m = s.match(/(?:(\d{4})\/)?(\d{1,2})\/(\d{1,2})/); if (!m) return null;
+    const t = s.replace(m[0], "").replace(/\s+/g, " ").trim(); if (!t) return null;
+    const now = new Date(today + "T00:00:00");
+    let d = new Date(Number(m[1] || now.getFullYear()), Number(m[2]) - 1, Number(m[3]));
+    if (!m[1] && d < now) d = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate());
+    return { t, d: ymd(d) };
+  }
+  function renderCd() {
+    const ul = $("cdList"); ul.textContent = "";
+    const all = cdItems(), list = all.map((x, i) => ({ x, i, n: daysUntil(x.d) })).filter((y) => y.n >= 0).sort((a, b) => a.n - b.n);
+    if (all.length !== list.length && !DEMO) { saveCd(list.map((y) => y.x)); return; }   // 過ぎたものを消す
+    if (!list.length) { ul.append(el("li", "empty", "旅行や誕生日など、楽しみな日を書いておくと「あと何日」が出ます。")); return; }
+    list.forEach(({ x, i, n }) => {
+      const li = el("li", n <= 7 ? "due" : null), t = el("div", "t", x.t);
+      const dd = new Date(x.d + "T00:00:00");
+      t.append(el("span", "ago", (n === 0 ? "きょう！" : "あと" + n + "日") + `（${dd.getMonth() + 1}/${dd.getDate()}）`));
+      const del = el("button", "x", "消す"); del.type = "button"; del.setAttribute("aria-label", x.t + "を消す");
+      del.addEventListener("click", () => {
+        if (!del.classList.contains("armed")) { del.classList.add("armed"); del.textContent = "本当に？"; setTimeout(() => { del.classList.remove("armed"); del.textContent = "消す"; }, 3000); return; }
+        const l = cdItems().slice(); l.splice(i, 1); saveCd(l);
+      });
+      li.append(t, el("span"), del); ul.append(li);
+    });
+  }
+  function cdSoon() { return cdItems().map((x) => ({ x, n: daysUntil(x.d) })).filter((y) => y.n >= 0 && y.n <= 7).sort((a, b) => a.n - b.n); }
+  $("cdForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const it = parseCd($("cdText").value); if (!it) { $("cdText").select(); return; }
+    $("cdText").value = ""; saveCd(cdItems().concat([it]));
+  });
+  renderCd();
 
   /* ---------- アシスタントのボタン ---------- */
   $("asChips").addEventListener("click", (e) => {
