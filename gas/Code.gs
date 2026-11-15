@@ -87,6 +87,7 @@ function doGet(e) {
       case 'memoAdd': return json_(memoAdd_(p.text));
       case 'memoSet': return json_(memoSet_(p.id, p.on === '1'));
       case 'memoDel': return json_(memoDel_(p.id));
+      case 'mailRead': return json_(mailRead_(p.id, p.all === '1'));
       case 'photoDelete': return json_(photoDelete_(p.id));
       case 'edit': return json_(editItem_(p));
       case 'delete': return json_(deleteItem_(p));
@@ -676,13 +677,32 @@ function getMail_() {
   const cache = CacheService.getScriptCache(), hit = cache.get('mail');
   if (hit) return JSON.parse(hit);
   const q = PROPS_.getProperty('MAIL_QUERY') || 'in:inbox is:unread is:important newer_than:3d';
-  const items = GmailApp.search(q, 0, 5).map((th) => {
+  const pick = (th) => {
     const m = th.getMessages().pop(), from = String(m.getFrom()).replace(/\s*<.*>$/, '').replace(/^"|"$/g, '');
-    return { from: from.slice(0, 30), subject: String(th.getFirstMessageSubject() || '（件名なし）').slice(0, 60), at: m.getDate().toISOString() };
-  });
-  const out = { unread: GmailApp.getInboxUnreadCount(), important: items };
+    return { id: th.getId(), from: from.slice(0, 30), subject: String(th.getFirstMessageSubject() || '（件名なし）').slice(0, 60), at: m.getDate().toISOString() };
+  };
+  const items = GmailApp.search(q, 0, 8).map(pick);
+  // 大事なもの以外の、新しい未読（メインのタブだけ）も少し出す
+  const ids = {}; items.forEach((x) => { ids[x.id] = 1; });
+  const recent = GmailApp.search('in:inbox is:unread category:primary', 0, 8).map(pick).filter((x) => !ids[x.id]).slice(0, 5);
+  const out = { unread: GmailApp.getInboxUnreadCount(), important: items, recent: recent };
   cache.put('mail', JSON.stringify(out), 5 * 60);
   return out;
+}
+
+/** メールを既読にする。id があればそのスレッド、all=1 なら受信トレイの未読をすべて（100件ずつ） */
+function mailRead_(id, all) {
+  if (all) {
+    for (let i = 0; i < 20; i++) {
+      const ths = GmailApp.search('in:inbox is:unread', 0, 100);
+      if (!ths.length) break;
+      GmailApp.markThreadsRead(ths);
+    }
+  } else if (id) {
+    GmailApp.getThreadById(id).markRead();
+  }
+  CacheService.getScriptCache().remove('mail');
+  return { ok: true, mail: getMail_() };
 }
 
 /* ---------- アシスタント（ボードの入力欄と、Siri のショートカットから呼ぶ） ---------- */

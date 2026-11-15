@@ -156,7 +156,11 @@ h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; f
 .since-list li.due .ago { color: var(--warn); font-weight: 700; }
 .since-list .btn { min-height: 40px; padding: 6px 14px; font-size: 14px; }
 .since-list .x { background: transparent; border: 0; color: var(--muted); font-size: 13px; min-width: 44px; min-height: 40px; cursor: pointer; }
-.since-list .x.armed { color: var(--warn); font-weight: 700; }
+.since-list .x.armed, .btn.armed { color: var(--warn); font-weight: 700; }
+.mail-list .t small { display: block; font-size: 12px; color: var(--muted); }
+.mail-list li.imp .t::before { content: "大事"; display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 6px; font-size: 11px; color: #14261c; background: #ffd98a; vertical-align: 2px; }
+.mail-list a.btn { text-decoration: none; display: inline-grid; place-items: center; }
+.rm-row a.btn { text-decoration: none; display: inline-grid; place-items: center; }
 .since-list .empty { display: block; color: var(--muted); font-size: 14px; border: 0; }
 .chk-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .chk { width: 100%; display: flex; align-items: center; gap: 16px; font: inherit; font-size: 20px; color: var(--ink); text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: 14px 2px; cursor: pointer; min-height: 60px; }
@@ -436,6 +440,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <ul class="ev-list upcoming" id="upcoming"></ul>
         <h2 style="margin-top:14px">予定を追加</h2>
         <div id="evFormBox"></div>
+        <h2 style="margin-top:22px">カウントダウン</h2>
+        <ul class="since-list" id="cdList"></ul>
+        <form class="rm-row" id="cdForm" autocomplete="off"><input type="text" id="cdText" placeholder="例：旅行 12/20" enterkeyhint="done" aria-label="カウントダウン" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
       </div>
       <div class="col">
         <h2>きょうのルーティン <small id="rCount"></small></h2>
@@ -446,14 +453,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <form class="rm-row" id="sinceForm" autocomplete="off"><input type="text" id="sinceText" placeholder="例：シーツ交換 14日ごと" enterkeyhint="done" aria-label="ときどきやること" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
       </div>
       <div class="col c3">
-        <h2>リマインダー</h2>
+        <h2>メール <small id="mailCount"></small></h2>
+        <ul class="since-list mail-list" id="mailList"></ul>
+        <div class="rm-row wrap"><a class="btn" id="mailOpen" href="https://mail.google.com/mail/u/0/#inbox" target="_blank" rel="noopener">Gmail を開く</a><button class="btn" type="button" id="mailAllRead">受信トレイを全部既読</button></div>
+        <p class="rm-msg" id="mailMsg"></p>
+        <h2 style="margin-top:22px">リマインダー</h2>
         <div id="rmFormBox"></div>
         <ul class="rm-list" id="rmList"></ul>
         <h2 style="margin-top:14px">これからの天気 <small id="place"></small></h2>
         <div class="hours" id="hours"></div>
-        <h2 style="margin-top:22px">カウントダウン</h2>
-        <ul class="since-list" id="cdList"></ul>
-        <form class="rm-row" id="cdForm" autocomplete="off"><input type="text" id="cdText" placeholder="例：旅行 12/20" enterkeyhint="done" aria-label="カウントダウン" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
       </div>
     </div></div>
   </section>
@@ -652,14 +660,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1419"></script>
-<script src="gomi.js?v=2026-11-15_1419"></script>
-<script src="sun.js?v=2026-11-15_1419"></script>
+<script src="remind-parse.js?v=2026-11-15_1838"></script>
+<script src="gomi.js?v=2026-11-15_1838"></script>
+<script src="sun.js?v=2026-11-15_1838"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 14:19";
+  const VERSION = "2026-11-15 18:38";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1112,7 +1120,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     });
   }
 
-  function render() { renderWeather(); renderCalendar(); renderReminders(); renderMemos(); renderWeek(); $("aiTag").textContent = data && data.ai ? "Claude が読み取ります" : ""; if (!rtDraft) renderRtEditor(); renderRoutines(); renderNews(); }
+  function render() { renderWeather(); renderCalendar(); renderReminders(); renderMemos(); renderWeek(); $("aiTag").textContent = data && data.ai ? "Claude が読み取ります" : ""; if (!rtDraft) renderRtEditor(); renderRoutines(); renderNews(); renderMail(); }
 
   /* ---------- 壁紙（自分の写真／山なみ／世界の絶景） ---------- */
   let photoIds = [], photoIdx = 0, photoFront = 0, wallBusy = false, demoPhotos = null, shown = null;
@@ -2124,6 +2132,46 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
   loadExtra(); setInterval(loadExtra, 10 * 60000);
 
+  /* ---------- メール（予定とルーティンの画面。裏方の getMail_。既読は action=mailRead） ---------- */
+  const gmailUrl = (id) => "https://mail.google.com/mail/u/0/#inbox/" + encodeURIComponent(id);
+  function renderMail() {
+    const ul = $("mailList"); ul.textContent = "";
+    const ml = data && data.mail;
+    if (!ml) { $("mailCount").textContent = ""; ul.append(el("li", "empty", DEMO ? "" : "メールを出すには、裏方（Apps Script）の更新と setup の実行が必要です。")); return; }
+    $("mailCount").textContent = `未読 ${ml.unread}件`;
+    const list = (ml.important || []).map((m) => Object.assign({ imp: true }, m)).concat((ml.recent || []).map((m) => Object.assign({ imp: false }, m)));
+    if (!list.length) { ul.append(el("li", "empty", "大事な未読や、新しい未読はありません。")); return; }
+    list.forEach((m) => {
+      const li = el("li", m.imp ? "imp" : null), t = el("div", "t", m.subject);
+      const d = new Date(m.at);
+      t.append(el("small", null, `${m.from} ・ ${ymd(d) === today ? hm(d) : dayStr(d)}`));
+      const open = el("a", "btn", "開く"); open.href = m.id ? gmailUrl(m.id) : "https://mail.google.com/mail/u/0/#inbox"; open.target = "_blank"; open.rel = "noopener";
+      const rd = el("button", "x", "既読"); rd.type = "button"; rd.setAttribute("aria-label", m.subject + "を既読にする");
+      rd.addEventListener("click", () => mailRead({ id: m.id }));
+      li.append(t, open, rd); ul.append(li);
+    });
+  }
+  async function mailRead(q) {
+    const msg = $("mailMsg"); msg.classList.remove("err");
+    const ml = data && data.mail; if (!ml) return;
+    // 先に画面から消す
+    if (q.all) { ml.important = []; ml.recent = []; ml.unread = 0; }
+    else { ml.important = (ml.important || []).filter((m) => m.id !== q.id); ml.recent = (ml.recent || []).filter((m) => m.id !== q.id); ml.unread = Math.max(0, ml.unread - 1); }
+    renderMail(); renderNext();
+    if (DEMO) return;
+    try {
+      const r = await callApi(Object.assign({ action: "mailRead" }, q.all ? { all: "1" } : { id: q.id }));
+      if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
+      if (r.mail && data) { data.mail = r.mail; store.set("ouchi.last", data); renderMail(); renderNext(); }
+      msg.textContent = q.all ? "受信トレイの未読をすべて既読にしました。" : "";
+    } catch (e) { msg.classList.add("err"); msg.textContent = "既読にできませんでした：" + e.message; }
+  }
+  $("mailAllRead").addEventListener("click", () => {
+    const b = $("mailAllRead");
+    if (!b.classList.contains("armed")) { b.classList.add("armed"); b.textContent = "本当に全部？"; setTimeout(() => { b.classList.remove("armed"); b.textContent = "受信トレイを全部既読"; }, 3000); return; }
+    b.classList.remove("armed"); b.textContent = "受信トレイを全部既読"; mailRead({ all: true });
+  });
+
   /* ---------- アシスタントのボタン ---------- */
   $("asChips").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
@@ -2344,7 +2392,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       reminders: [{ id: "r1", title: "牛乳を買う", start: at(0, 23, 50).toISOString(), done: true }, { id: "r2", title: "パンチェッタのラップを外す", start: at(7, 9).toISOString() }],
       routines: [{ id: "a", title: "風呂掃除", days: [], order: 1 }, { id: "b", title: "皿洗い", days: [], order: 2 }, { id: "c", title: "洗濯", days: [1, 3, 5], order: 3 }],
       checks: { a: true }, streaks: { a: 6, b: 2 },
-      mail: { unread: 12, important: [{ from: "研究室", subject: "ゼミ資料の締切について", at: new Date().toISOString() }, { from: "教務課", subject: "履修登録の確認", at: new Date().toISOString() }] },
+      mail: { unread: 12, important: [{ id: "d1", from: "研究室", subject: "ゼミ資料の締切について", at: new Date().toISOString() }, { id: "d2", from: "教務課", subject: "履修登録の確認", at: new Date().toISOString() }], recent: [{ id: "d3", from: "楽天カード", subject: "お支払予定金額のご案内", at: new Date(Date.now() - 864e5).toISOString() }] },
       news: ["ニュースの見出しがここに並びます", "見出しをタップすると記事が開きます", "少し大きめの文字で表示します", "一度に8件まで", "三分さわらなければ時計の画面に戻ります", "横にスワイプで画面が切り替わります"].map((t) => ({ title: t, source: "試し表示", url: "" })),
     };
   }
