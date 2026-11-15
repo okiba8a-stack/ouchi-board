@@ -322,6 +322,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .ph-btns { display: flex; justify-content: space-between; margin-top: 4px; }
 .ph-btns button { font: inherit; font-size: 13px; min-width: 32px; height: 32px; border-radius: 16px; border: 0; background: var(--soft); color: var(--ink); cursor: pointer; padding: 0 6px; }
 .ph-btns .del.sure { background: var(--warn); color: #2a0f06; }
+.memo-sug .btn { min-height: 36px; padding: 4px 12px; font-size: 14px; }
+.memo-sug .btn::before { content: "＋"; opacity: .6; margin-right: 2px; }
 .as-chips .btn { min-height: 40px; padding: 6px 14px; font-size: 14px; }
 .gm-week { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .gm-week li { display: grid; grid-template-columns: 74px minmax(0,1fr); gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
@@ -454,6 +456,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <div class="tool-body">
           <form class="rm-row" id="memoForm" autocomplete="off"><input type="text" id="memoText" placeholder="例：牛乳" enterkeyhint="done" aria-label="メモ" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
           <ul class="chk-list" id="memoList"></ul>
+          <div class="seg memo-sug" id="memoSug" aria-label="いつもの買い物"></div>
         </div>
       </div>
       <div class="tool" data-tool="wk">
@@ -597,7 +600,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:18";
+  const VERSION = "2026-11-15 09:20";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1843,9 +1846,39 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
 
   /* ---------- メモ・買い物 ---------- */
+  /* いつもの買い物：一覧に出てきたメモを数えておき（端末に保存）、よく出るものを候補のボタンにする */
+  let memoHist = store.get("ouchi.memoHist") || { n: {}, seen: [] };
+  function countMemos(list) {
+    let changed = false;
+    list.forEach((m) => {
+      if (!m.id || String(m.id).startsWith("tmp") || memoHist.seen.includes(m.id)) return;
+      memoHist.seen.push(m.id); memoHist.n[m.text] = (memoHist.n[m.text] || 0) + 1; changed = true;
+    });
+    if (!changed) return;
+    memoHist.seen = memoHist.seen.slice(-400);
+    const top = Object.entries(memoHist.n).sort((a, b) => b[1] - a[1]).slice(0, 60);
+    memoHist.n = Object.fromEntries(top);
+    if (!DEMO) store.set("ouchi.memoHist", memoHist);
+  }
+  function renderMemoSug(list) {
+    const box = $("memoSug"); box.textContent = "";
+    const now = new Set(list.filter((m) => !m.done).map((m) => m.text));
+    const hist = DEMO ? { 牛乳: 5, 卵: 4, 食パン: 3, トイレットペーパー: 2, 納豆: 2, 単3電池: 1 } : memoHist.n;
+    Object.entries(hist).filter(([t, n]) => n >= 2 && !now.has(t)).sort((a, b) => b[1] - a[1]).slice(0, 6).forEach(([t]) => {
+      const b = el("button", "btn", t); b.type = "button"; b.setAttribute("aria-label", t + "を追加");
+      b.addEventListener("click", () => addMemo(t)); box.append(b);
+    });
+    box.hidden = !box.childElementCount;
+  }
+  function addMemo(text) {
+    if (!text || !data) return;
+    data.memos = (data.memos || []).concat({ id: "tmp" + Date.now(), text, done: false }); renderMemos();
+    memoCall({ action: "memoAdd", text });
+  }
   function renderMemos() {
     const ul = $("memoList"); ul.textContent = "";
     const list = (data && data.memos) || [];
+    countMemos(list); renderMemoSug(list);
     $("memoCount").textContent = list.length ? `${list.filter((m) => !m.done).length} 件` : "";
     if (!list.length) ul.append(el("li", "empty", data && !("memos" in data) && !DEMO ? "メモには裏方（Apps Script）の更新が必要です。" : "メモはありません。"));
     list.forEach((m) => {
@@ -1867,9 +1900,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("memoForm").addEventListener("submit", (ev) => {
     ev.preventDefault();
     const text = $("memoText").value.trim(); if (!text || !data) return;
-    $("memoText").value = "";
-    data.memos = (data.memos || []).concat({ id: "tmp" + Date.now(), text, done: false }); renderMemos();
-    memoCall({ action: "memoAdd", text });
+    $("memoText").value = ""; addMemo(text);
   });
 
   /* ---------- 週間天気 ---------- */
