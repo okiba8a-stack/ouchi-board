@@ -6,6 +6,7 @@
 <title>おうちボード</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="おうちボード">
 <meta name="theme-color" content="#f4f0e8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#151412" media="(prefers-color-scheme: dark)">
@@ -47,14 +48,16 @@ body {
   -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; transition: filter 1.2s;
 }
 body.night { filter: brightness(.5); }
-/* iOS 27 のホーム画面アプリ対策。
-   ・上端のぼかしは、上端から4px下の真ん中に「幅90%以上・背景色つき・高さ10px超の固定の帯」があると消え、
-     時刻表示の背景がその色になる（WebKit の LocalFrameView::fixedContainerEdges）。black-translucent だとこの仕組みが
-     働かないので、状態バーの設定は書かない。帯は background-clip: text で見た目には何も描かない（色は設定から読まれる）。
-   ・black-translucent のころに追加したアイコンは中身が時刻表示の下に入り、高さが短く報告されるので 100lvh を使う。 */
+/* iOS 26〜27 のホーム画面アプリ対策（2026-11-15 第2版）。
+   ・写真を時刻・電池の表示の裏まで出すため black-translucent にする。
+   ・このとき iOS は時刻表示の下 約40pt までをぼかす（Liquid Glass の scroll edge effect。ページからは消せない。
+     色の帯を置く方法は black-translucent では効かず、meta を外すと上が色の帯になる）。
+     そこで写真だけを上端まで出し、文字とボタンはぼかしの範囲（上端＋40px）より下に置く。
+   ・時刻表示（白い文字）が明るい写真でも読めるよう、上端にうすい影を敷く。 */
 @supports (height: 100lvh) { html.under-bar, html.under-bar body { height: 100lvh; } }
-.sbar { display: none; position: fixed; top: 0; left: 0; right: 0; height: max(12px, var(--sa-t)); background-color: #101114; -webkit-background-clip: text; background-clip: text; color: transparent; z-index: 30; pointer-events: none; }
-html.standalone .sbar { display: block; }
+html.standalone.under-bar { --pad-t: calc(var(--sa-t) + 40px); }
+.topshade { display: none; position: fixed; top: 0; left: 0; right: 0; height: calc(var(--sa-t) + 40px); background-image: linear-gradient(rgba(0,0,0,.38), rgba(0,0,0,0)); z-index: 30; pointer-events: none; }
+html.standalone.under-bar .topshade { display: block; }
 h2 { margin: 0; font-weight: 700; font-size: 13px; letter-spacing: .14em; color: var(--muted); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; font-size: 12px; }
 
@@ -223,6 +226,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
 /* ツール：小さなカードを1ページに並べ、押すと大きく開く */
 .tools { flex: 1; min-height: 0; width: 100%; max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 16px; }
 @media (orientation: portrait), (max-width: 900px) { .tools { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* iPhone など狭い画面では1ページに収めず、1列のカードを縦に送る */
+@media (max-width: 640px) { .tools { flex: none; grid-template-columns: minmax(0, 1fr); grid-auto-rows: 250px; } }
 .tool { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 10px; background: rgba(16,18,22,.38); border: 1px solid rgba(255,255,255,.12); border-radius: 24px; padding: 16px 18px; box-shadow: 0 10px 40px rgba(0,0,0,.18); }
 .tools .wide { grid-column: span 2; }
 .tool-head { flex: none; display: flex; align-items: center; gap: 8px; }
@@ -253,7 +258,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .rd-bar i { display: block; height: 100%; border-radius: 2px; background: #fff; width: 0; }
 .rd-msg { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; color: var(--muted); }
 /* 地震情報の帯 */
-.quake { position: fixed; z-index: 25; left: 50%; top: calc(var(--sa-t) + 14px); transform: translateX(-50%); width: min(760px, calc(100% - 32px)); display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 18px; border-radius: 20px; background: rgba(28,31,37,.95); color: #fff; border: 1px solid rgba(255,255,255,.16); box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+.quake { position: fixed; z-index: 25; left: 50%; top: var(--pad-t); transform: translateX(-50%); width: min(760px, calc(100% - 32px)); display: flex; align-items: center; gap: 14px; padding: 12px 14px 12px 18px; border-radius: 20px; background: rgba(28,31,37,.95); color: #fff; border: 1px solid rgba(255,255,255,.16); box-shadow: 0 12px 40px rgba(0,0,0,.45); }
 .quake.strong { background: rgba(122,34,22,.96); border-color: rgba(255,180,160,.4); }
 .quake .sc { flex: none; font-family: var(--font-num); font-size: 15px; font-weight: 700; line-height: 1.1; text-align: center; background: rgba(255,255,255,.14); border-radius: 12px; padding: 6px 10px; }
 .quake .sc b { display: block; font-size: 26px; font-weight: 500; }
@@ -287,6 +292,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .sheet .hours { grid-template-columns: repeat(8, minmax(0,1fr)); gap: 14px 4px; }
 .sheet .icon .sun, .sheet .icon .bolt { fill: #ffd98a; } .sheet .icon .cloud { fill: #fff; opacity: .8; } .sheet .icon .drop, .sheet .icon .snow { fill: #a9cdf5; opacity: 1; }
 .sheet .hours .p { color: #a9cdf5; }
+@media (max-width: 640px) {
+  .wx-sum { grid-template-columns: minmax(0, 1fr); }
+  .sheet.wide h2 { flex-wrap: wrap; }
+  .sheet.wide h2 small { flex-basis: 100%; }
+  .sheet .hours { grid-template-columns: repeat(6, minmax(0,1fr)); }
+}
 .sheet input[type=time] { font-family: var(--font-num); font-weight: 200; font-size: 56px; color: var(--ink); background: transparent; border: 0; border-bottom: 1px solid var(--muted); padding: 4px 2px; min-height: 80px; width: 100%; }
 .ring-time { font-family: var(--font-num); font-weight: 200; font-size: 96px; line-height: 1; text-align: center; }
 .ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
@@ -294,6 +305,13 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .ph-btns { display: flex; justify-content: space-between; margin-top: 4px; }
 .ph-btns button { font: inherit; font-size: 13px; min-width: 32px; height: 32px; border-radius: 16px; border: 0; background: var(--soft); color: var(--ink); cursor: pointer; padding: 0 6px; }
 .ph-btns .del.sure { background: var(--warn); color: #2a0f06; }
+.as-chips .btn { min-height: 40px; padding: 6px 14px; font-size: 14px; }
+.gm-week { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.gm-week li { display: grid; grid-template-columns: 74px minmax(0,1fr); gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+.gm-week .d { color: var(--muted); font-size: 13px; align-self: center; }
+.gm-week li.today .d { color: var(--accent); font-weight: 700; }
+.gm-week .none { color: var(--muted); }
+#gmText { width: 100%; resize: vertical; min-height: 96px; font: inherit; font-size: 16px; line-height: 1.5; color: var(--ink); background: rgba(0,0,0,.18); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
 .as-log { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; }
 .as-log div { padding: 8px 12px; border-radius: 14px; font-size: 15px; overflow-wrap: anywhere; }
 .as-log .me { align-self: flex-end; background: var(--soft); color: var(--muted); }
@@ -338,7 +356,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <p class="rm-msg" id="cfgMsg"></p>
 </section>
 
-<div class="sbar" aria-hidden="true"></div>
+<div class="topshade" aria-hidden="true"></div>
 <div class="backdrop" id="backdrop" hidden></div>
 
 <main class="pager" id="pager" hidden>
@@ -391,6 +409,13 @@ input::placeholder { color: var(--muted); opacity: .8; }
               <button class="btn mic" type="button" id="asMic" hidden aria-pressed="false" aria-label="声で頼む">🎤</button>
             </div>
           </form>
+          <div class="seg as-chips" id="asChips">
+            <button class="btn" type="button" data-ask="きょうの予定は？">きょうの予定</button>
+            <button class="btn" type="button" data-ask="あしたの予定は？">あしたの予定</button>
+            <button class="btn" type="button" data-ask="あしたの天気は？">あしたの天気</button>
+            <button class="btn" type="button" data-ask="ごみの日は？">ごみの日</button>
+            <button class="btn" type="button" data-fill="あしたの朝7時に">リマインダー…</button>
+          </div>
           <div class="as-log" id="asLog" aria-live="polite"></div>
           <label class="allday"><input type="checkbox" id="asSpeak">声で返事する</label>
         </div>
@@ -412,9 +437,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
       </div>
       <div class="tool" data-tool="wk">
         <div class="tool-head"><h2>週間天気 <small id="wkPlace"></small></h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
-        <div class="tool-body"><ul class="wk-list" id="wkList"></ul><div class="rm-row"><button class="btn" type="button" id="toolRadar">雨雲レーダー・24時間の天気</button></div></div>
+        <div class="tool-body"><ul class="wk-list" id="wkList"></ul><p class="note" id="wkSun"></p><div class="rm-row"><button class="btn" type="button" id="toolRadar">雨雲レーダー・24時間の天気</button></div></div>
       </div>
-      <div class="tool wide" data-tool="wall">
+      <div class="tool" data-tool="wall">
         <div class="tool-head"><h2>壁紙と写真</h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body">
           <div class="seg" id="wallSeg">
@@ -428,6 +453,16 @@ input::placeholder { color: var(--muted); opacity: .8; }
           <div class="rm-row"><button class="btn" type="button" id="photoAdd">写真を選ぶ</button></div>
           <p class="rm-msg" id="photoMsg"></p>
           <div class="ph-grid" id="phGrid"></div>
+        </div>
+      </div>
+      <div class="tool" data-tool="gomi">
+        <div class="tool-head"><h2>ごみの日</h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
+        <div class="tool-body">
+          <ul class="gm-week" id="gmWeek"></ul>
+          <textarea id="gmText" rows="4" spellcheck="false" aria-label="ごみの日の規則" placeholder="燃えるごみ 月 木 8:30まで&#10;プラスチック 水&#10;資源ごみ 第2・第4 金"></textarea>
+          <div class="rm-row"><button class="btn primary" type="button" id="gmSave">保存</button></div>
+          <p class="rm-msg" id="gmMsg"></p>
+          <p class="note">1行に1つ、「名前 曜日」の形で書きます。第2・第4 のように週も指定できます。前の晩（18時から）と当日の朝（12時まで）に時計の画面に出ます。この端末に保存されます。</p>
         </div>
       </div>
       <div class="tool" data-tool="rt">
@@ -518,6 +553,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
   var root = document.documentElement;
   var standalone = navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
   if (standalone) root.classList.add("standalone");
+  /* 確認用：?sa=24 で「ホーム画面アプリで上端の余白が24px」のときの見た目にする */
+  var fake = /[?&]sa=(\d+)/.exec(location.search);
+  if (fake) { root.classList.add("standalone", "under-bar"); root.style.setProperty("--sa-t", fake[1] + "px"); return; }
   function check(){
     if (!standalone || !document.body) return;
     var p = document.createElement("div");
@@ -532,11 +570,13 @@ input::placeholder { color: var(--muted); opacity: .8; }
 })();
 </script>
 <script src="remind-parse.js"></script>
+<script src="gomi.js"></script>
+<script src="sun.js"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 01:19";
+  const VERSION = "2026-11-15 09:03";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -573,7 +613,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     try {
       const r = await callApi({ action: "ping" }, { api, key });
       if (!r.ok) throw new Error(r.error === "bad_key" ? "合言葉が違います" : r.error);
-      cfg = { api, key }; store.set("ouchi.cfg", cfg);
+      cfg = Object.assign({}, cfg, { api, key }); store.set("ouchi.cfg", cfg);
       // この URL のままホーム画面に追加すると、アプリ側にも設定が入る
       history.replaceState(null, "", location.pathname + "?c=" + encodeCfg(cfg));
       msg.innerHTML = '<span class="ok">つながりました。</span> Safari で見ている場合は、このまま 共有 →「ホーム画面に追加」をしてください。';
@@ -798,7 +838,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const cm = $("comment"); cm.textContent = "";
     const rl = w ? rainLine(w) : "";
     if (rl) cm.append(el("span", "rain-line", rl));
-    if (data && data.comment) cm.append(document.createTextNode(data.comment));
+    const ct = baseComment(rl);
+    if (ct) cm.append(document.createTextNode(ct));
     cm.hidden = !cm.textContent;
     $("place").textContent = (data && data.place) || "";
   }
@@ -830,6 +871,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (cur) box.append(el("span", "tag", "いま"), el("span", null, cur.e.title));
     else if (nxt) box.append(el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title));
     if (allDay) box.append(el("span", "tag", "きょう"), el("span", null, allDay));
+    const g = gomiNotice(now);
+    if (g) box.append(el("span", "tag gomi", g[0]), el("span", null, g[1]));
     const due = liveReminders().filter((r) => !r.done && new Date(r.start) <= endOfToday()).map((r) => r.title).join("・");
     if (due) box.append(el("span", "tag", "リマインダー"), el("span", null, due));
   }
@@ -1297,6 +1340,13 @@ input::placeholder { color: var(--muted); opacity: .8; }
     return "";
   }
 
+  // 裏方のひとこと（1日の降水確率から作る）が、毎時の予報から作った雨の一文と食い違うときは傘の文を外す
+  function baseComment(rl) {
+    let c = (data && data.comment) || "";
+    if (/予報/.test(rl)) c = c.replace(/傘はいらなそうです。?/, "");
+    return c.trim();
+  }
+
   /* ---------- くわしい天気 ---------- */
   function openWeather() {
     const w = data && data.weather; if (!w || !w.today) return;
@@ -1307,7 +1357,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       txt.append(el("div", "lbl", lbl), el("div", "desc", desc), el("div", "temps", `最高 ${Math.round(d.max)}° / 最低 ${Math.round(d.min)}°　降水 ${d.pop ?? "—"}%`));
       box.append(icon(kind), txt); sum.append(box);
     });
-    $("wxComment").textContent = (rainLine(w) + " " + (data.comment || "")).trim(); $("wxPlace").textContent = (data.place || "") + " ・ Open-Meteo";
+    const rl = rainLine(w); $("wxComment").textContent = (rl + " " + baseComment(rl)).trim(); $("wxPlace").textContent = [data.place, sunLine(), "Open-Meteo"].filter(Boolean).join(" ・ ");
     const hrs = $("wxHours"); hrs.textContent = "";
     const now = new Date(); now.setMinutes(0, 0, 0);
     (w.hours || []).filter((h) => new Date(h.time) >= now).slice(0, 24).forEach((h) => {
@@ -1502,7 +1552,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
         addTimer(sec, label); asReply((label ? label + "の" : "") + "タイマーをセットしました。"); return;
       }
     }
-    if (DEMO) { asReply("試し表示では、タイマー以外は答えられません。"); return; }
+    if (/ごみ|ゴミ/.test(t) && !/メモ|リマインド/.test(t)) {
+      const wk = gomiWeekText(7);
+      asReply(!gomiRules().length ? "ごみの日はまだ登録されていません。ツールの「ごみの日」に書いてください。" : wk.length ? wk.join("、") + "です。" : "この1週間に出せるごみはありません。");
+      return;
+    }
+    if (DEMO) { asReply("試し表示では、タイマーとごみの日以外は答えられません。"); return; }
     try {
       const r = await callApi({ action: "say", text });
       if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
@@ -1511,6 +1566,56 @@ input::placeholder { color: var(--muted); opacity: .8; }
       if (r.changed) refresh();
     } catch (e) { asReply("できませんでした：" + e.message); }
   }
+  /* ---------- ごみの日（規則は cfg.gomi に文のまま持つ。入れ直しのアドレスにも入る） ---------- */
+  const DEMO_GOMI = ["燃えるごみ 月 木 8:30まで", "プラスチック 水", "資源ごみ 第2・第4 金", "びん・缶 第1・第3 火"].join(String.fromCharCode(10));
+  const gomiRules = () => { const src = (cfg && cfg.gomi) || (DEMO ? DEMO_GOMI : ""); return window.Gomi && src ? Gomi.parseGomi(src).rules : []; };
+  // 前の晩（18時〜）は翌日の分、当日は12時まで。[札, 中身] を返す
+  function gomiNotice(now) {
+    const rules = gomiRules(); if (!rules.length) return null;
+    const h = now.getHours();
+    const names = (d) => Gomi.gomiOn(rules, d).map((r) => r.name + (r.until ? "（" + r.until + "まで）" : "")).join("・");
+    if (h < 12) { const n = names(now); if (n) return ["ごみ", n]; }
+    if (h >= 18) { const t = new Date(now); t.setDate(t.getDate() + 1); const n = names(t); if (n) return ["あしたのごみ", n]; }
+    return null;
+  }
+  function gomiWeekText(days) {
+    const rules = gomiRules(), out = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(); d.setDate(d.getDate() + i);
+      const n = Gomi.gomiOn(rules, d).map((r) => r.name).join("・");
+      if (n) out.push((i === 0 ? "きょう" : i === 1 ? "あした" : dayStr(d)) + "：" + n);
+    }
+    return out;
+  }
+  function renderGomi() {
+    const ul = $("gmWeek"); ul.textContent = "";
+    const rules = gomiRules();
+    if (!rules.length) { ul.append(el("li", null, el("span", "none", "まだ登録されていません。下の欄に書いて保存してください。"))); return; }
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(); d.setDate(d.getDate() + i);
+      const n = Gomi.gomiOn(rules, d).map((r) => r.name).join("・");
+      const li = el("li", i === 0 ? "today" : null);
+      li.append(el("span", "d", i === 0 ? "きょう" : i === 1 ? "あした" : dayStr(d)), el("span", n ? null : "none", n || "—"));
+      ul.append(li);
+    }
+  }
+  $("gmText").value = (cfg && cfg.gomi) || "";
+  $("gmSave").addEventListener("click", () => {
+    const text = $("gmText").value.trim(), { rules, bad } = Gomi.parseGomi(text), msg = $("gmMsg");
+    cfg = Object.assign({}, cfg || {}, { gomi: text }); store.set("ouchi.cfg", cfg);
+    msg.classList.toggle("err", bad.length > 0);
+    msg.textContent = bad.length ? "読めなかった行：" + bad.join("／") + "（曜日を「月」「第2 金」のように書いてください）" : text ? rules.map((r) => r.name + "：" + Gomi.describe(r)).join("／") + " を保存しました。" : "消しました。";
+    renderGomi(); renderNext();
+  });
+  renderGomi();
+
+  /* ---------- アシスタントのボタン ---------- */
+  $("asChips").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    unlockAudio();
+    if (b.dataset.ask) ask(b.dataset.ask);
+    else { const t = $("asText"); t.value = b.dataset.fill; t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+  });
   $("asForm").addEventListener("submit", (ev) => { ev.preventDefault(); const v = $("asText").value; $("asText").value = ""; unlockAudio(); ask(v); });
   {
     const SR2 = window.SpeechRecognition || window.webkitSpeechRecognition, mic = $("asMic");
@@ -1562,7 +1667,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   });
 
   /* ---------- 週間天気 ---------- */
+  // 日の出・日の入り（日野市。端末で計算）
+  function sunLine(d) {
+    if (!window.sunTimes) return "";
+    const t = window.sunTimes(d || new Date(), 35.6713, 139.3951);
+    return t.rise ? `日の出 ${hm(t.rise)} ・ 日の入り ${hm(t.set)}` : "";
+  }
   function renderWeek() {
+    $("wkSun").textContent = sunLine();
     const ul = $("wkList"); ul.textContent = "";
     const days = (data && data.weather && data.weather.days) || [];
     $("wkPlace").textContent = (data && data.place) || "";
@@ -1670,7 +1782,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   function demoData() {
     const d0 = new Date(); d0.setHours(0, 0, 0, 0);
     const at = (days, h, m) => new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + days, h || 0, m || 0);
-    const hours = []; for (let i = 0; i < 72; i++) hours.push({ time: toLocalInput(at(0, i)), code: i % 24 < 6 ? 1 : 0, temp: 13 + 6 * Math.sin(((i % 24) - 9) / 24 * Math.PI * 2), pop: i >= 15 && i <= 18 ? 70 : i > 40 ? 40 : 0 });
+    const hours = []; for (let i = 0; i < 72; i++) hours.push({ time: toLocalInput(at(0, i)), code: i >= 15 && i <= 18 ? 61 : i % 24 < 6 ? 1 : 0, temp: 13 + 6 * Math.sin(((i % 24) - 9) / 24 * Math.PI * 2), pop: i >= 15 && i <= 18 ? 70 : i > 40 ? 40 : 0 });
     const ev = (title, s, mins, loc) => ({ title, allDay: false, start: s.toISOString(), end: new Date(s.getTime() + mins * 60000).toISOString(), location: loc || "" });
     return {
       ok: true, date: today, place: "東京都日野市", at: new Date().toISOString(),
