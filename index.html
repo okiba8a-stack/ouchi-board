@@ -696,14 +696,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_2342"></script>
-<script src="gomi.js?v=2026-11-15_2342"></script>
-<script src="sun.js?v=2026-11-15_2342"></script>
+<script src="remind-parse.js?v=2026-11-15_2351"></script>
+<script src="gomi.js?v=2026-11-15_2351"></script>
+<script src="sun.js?v=2026-11-15_2351"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 23:42";
+  const VERSION = "2026-11-15 23:51";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔（設定がないとき）
   function photoEvery() { const m = Number(cfg && cfg.photoMin); return m > 0 ? m * 60000 : PHOTO_EVERY; }
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
@@ -1221,8 +1221,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const mix = (v, k) => Math.round(page === 0 ? v * (1 - sh) + k * sh : v * .5);
     // 写真がまだないときは決まった暗い色（明るい灰色にすると、iOS がその色のまま読み直さないことがあった）
     // 夜は画面に黒い幕（50%）がかかるので、帯（ページの外で幕がかからない）も同じだけ暗くする
-    const nf = document.body.classList.contains("night") ? .5 : 1;
-    const col = `rgb(${Math.round(mix(c[0], 12) * nf)}, ${Math.round(mix(c[1], 10) * nf)}, ${Math.round(mix(c[2], 8) * nf)})`;
+    // 時計の画面は夜、写真を12%まで消して暗い地（#151412）を見せ、その上に幕がかかる。帯も同じ計算にする
+    const night = document.body.classList.contains("night");
+    const dim = (v, base) => Math.round(night ? (page === 0 ? (v * .12 + base * .88) : v) * .5 : v);
+    const col = `rgb(${dim(mix(c[0], 12), 21)}, ${dim(mix(c[1], 10), 20)}, ${dim(mix(c[2], 8), 18)})`;
     const old = $("sbar");
     if (old.style.backgroundColor === col) return;
     // 先にページの背景を同じ色にしてから、帯を作り直す。
