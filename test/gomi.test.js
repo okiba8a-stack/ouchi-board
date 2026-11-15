@@ -32,4 +32,6 @@ eq(on(2026, 11, 14), ["粗大ごみ"], "11/14(土)＝第2土曜");
 eq(parseGomi("").rules, [], "空");
 eq(parseGomi("燃えるごみ 月木").rules[0].dows, [1, 4], "曜日をつなげて書く");
 eq(parseGomi("燃えるごみ 月 ときどき").bad.length, 1, "知らない語がある行は読めない行に入る");
+eq(parseGomi("第2・第4 金").bad.length, 1, "名前の書き忘れは読めない行");
+eq(parseGomi("月 木").bad.length, 1, "曜日だけの行は読めない行");
 process.exit(fail ? 1 : 0);

@@ -18,6 +18,7 @@
     const sp = src.search(/\s/);
     if (sp < 0) return null;
     const name = src.slice(0, sp);
+    if (/^(第|毎|[日月火水木金土](曜日?)?$)/.test(name)) return null;   // 名前の書き忘れ（「第2・第4 金」など）
     let s = src.slice(sp).replace(/[，、,／\/]/g, "・").replace(/[一二三四五]/g, (c) => String("一二三四五".indexOf(c) + 1));
     let until = "";
     s = s.replace(/(\d{1,2}):(\d{2})\s*(まで)?/, (m, h, mi) => { until = Number(h) + ":" + mi; return " "; });

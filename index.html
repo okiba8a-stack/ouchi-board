@@ -597,7 +597,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:16";
+  const VERSION = "2026-11-15 09:17";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -616,13 +616,19 @@ input::placeholder { color: var(--muted); opacity: .8; }
     try { const j = JSON.parse(decodeURIComponent(escape(atob(s.replace(/-/g, "+").replace(/_/g, "/"))))); return j && j.api && j.key ? j : null; } catch (e) { return null; }
   }
   function encodeCfg(c) { return btoa(unescape(encodeURIComponent(JSON.stringify(c)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
-  let cfg = (params.get("c") && decodeCfg(params.get("c"))) || store.get("ouchi.cfg");
-  if (cfg) store.set("ouchi.cfg", cfg);
+  // アドレスの ?c= はアイコンを追加した日の設定。接続先（api・key）だけはそちらを使い、
+  // ごみの日などあとで端末に保存した項目は保存済みのほうを残す
+  let cfg = (() => {
+    const saved = store.get("ouchi.cfg"), url = params.get("c") && decodeCfg(params.get("c"));
+    if (!url) return saved;
+    return Object.assign({}, url, saved || {}, { api: url.api, key: url.key });
+  })();
+  if (cfg && !DEMO) store.set("ouchi.cfg", cfg);
 
   function showSetup(canCancel) {
     $("pager").hidden = true; $("dots").hidden = true; $("backdrop").hidden = true; $("setup").hidden = false;
     $("cfgCancel").hidden = !canCancel;
-    if (cfg) { $("cfgApi").value = cfg.api; $("cfgKey").value = cfg.key; }
+    if (cfg) { $("cfgApi").value = cfg.api || ""; $("cfgKey").value = cfg.key || ""; }
   }
   function showBoard() { $("setup").hidden = true; $("pager").hidden = false; $("dots").hidden = false; $("backdrop").hidden = false; }
 
@@ -806,7 +812,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     renderAlarmTag(); checkAlarm(d);
     const h = d.getHours();
     document.body.classList.toggle("night", h >= 23 || h < 6);
-    if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); renderGomi(); renderSince(); renderWeek(); refresh(); loadHolidays(); }
+    if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); renderNext(); renderGomi(); renderSince(); renderWeek(); refresh(); loadHolidays(); }
     else { renderNext(); renderReminders(); }
   }
 
@@ -894,7 +900,6 @@ input::placeholder { color: var(--muted); opacity: .8; }
   // 1枚目に出す「つぎの予定」
   function renderNext() {
     const box = $("next"); box.textContent = "";
-    if (!data || !data.events) return;
     const { now, tEv, uEv } = splitEvents();
     const cur = tEv.find((x) => !x.allDay && x.s <= now && x.en > now);
     const nxt = tEv.find((x) => !x.allDay && x.s > now) || uEv[0];
@@ -909,7 +914,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (allDay) box.append(el("span", "tag", "きょう"), el("span", null, allDay));
     if (warnList.length) box.append(el("span", "tag", "気象"), el("span", warnList[0].level >= 30 ? "warn-on strong" : "warn-on", warnList.map((w) => w.name).join("・")));
     // 裏方から2時間以上読めていないときは、古い情報だと分かるように
-    const age = data.at ? Date.now() - Date.parse(data.at) : 0;
+    const age = data && data.at ? Date.now() - Date.parse(data.at) : 0;
     if (!DEMO && age > 2 * 3600000) box.append(el("span", "tag", "注意"), el("span", "warn-on", `${dayStr(new Date(data.at))} ${hm(new Date(data.at))} から更新できていません`));
     const sd = sinceDue();
     if (sd.length) box.append(el("span", "tag", "そろそろ"), el("span", null, sd.map((x) => x.t).join("・")));
@@ -1595,8 +1600,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
         addTimer(sec, label); asReply((label ? label + "の" : "") + "タイマーをセットしました。"); return;
       }
     }
-    if (/まとめ|おはよう|ブリーフィング/.test(t) && t.length <= 12) { asReply(briefing()); return; }
-    if (/ごみ|ゴミ/.test(t) && !/メモ|リマインド/.test(t)) {
+    if (/^(きょうの|今日の)?まとめ[?？。]?$|^おはよう|ブリーフィング/.test(t)) { asReply(briefing()); return; }
+    if (/(ごみ|ゴミ)(の日|は|って|出せる|いつ)/.test(t) && !/メモ|リマインド|\d+時|朝|夜|に出す/.test(t)) {
       const wk = gomiWeekText(7);
       asReply(!gomiRules().length ? "ごみの日はまだ登録されていません。ツールの「ごみの日」に書いてください。" : wk.length ? wk.join("、") + "です。" : "この1週間に出せるごみはありません。");
       return;
@@ -1646,7 +1651,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("gmText").value = (cfg && cfg.gomi) || "";
   $("gmSave").addEventListener("click", () => {
     const text = $("gmText").value.trim(), { rules, bad } = Gomi.parseGomi(text), msg = $("gmMsg");
-    cfg = Object.assign({}, cfg || {}, { gomi: text }); store.set("ouchi.cfg", cfg);
+    cfg = Object.assign({}, cfg || {}, { gomi: text }); if (!DEMO) store.set("ouchi.cfg", cfg);
     msg.classList.toggle("err", bad.length > 0);
     msg.textContent = bad.length ? "読めなかった行：" + bad.join("／") + "（曜日を「月」「第2 金」のように書いてください）" : text ? rules.map((r) => r.name + "：" + Gomi.describe(r)).join("／") + " を保存しました。" : "消しました。";
     renderGomi(); renderNext();
@@ -1718,14 +1723,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
     }
     return [];
   }
-  function saveSince(list) { cfg = Object.assign({}, cfg || {}, { since: list }); store.set("ouchi.cfg", cfg); renderSince(); renderNext(); }
+  function saveSince(list) { cfg = Object.assign({}, cfg || {}, { since: list }); if (!DEMO) store.set("ouchi.cfg", cfg); renderSince(); renderNext(); }
   function daysSince(d) { return Math.round((new Date(today + "T00:00:00") - new Date(d + "T00:00:00")) / 864e5); }
   function sinceDue() { return sinceItems().filter((x) => x.every && daysSince(x.d) >= x.every); }
   // 「シーツ交換 14日ごと」「歯ブラシ 1か月」「掃除機 2週間ごと」「布団干し 10」
   function parseSince(text) {
     const s = window.normalizeJa ? window.normalizeJa(text) : text;
     let every = 0, t = s;
-    const m = s.match(/\s*(\d+)\s*(日|週間?|か月|ヶ月|カ月|ヵ月|月)?\s*(ごと|おき|に1回|に一回)?\s*$/);
+    const m = s.match(/\s+(\d+)\s*(日|週間?|か月|ヶ月|カ月|ヵ月|月)?\s*(ごと|おき|に1回|に一回)?\s*$/);
     if (m && m.index > 0) { const n = Number(m[1]); every = /週/.test(m[2] || "") ? n * 7 : /月/.test(m[2] || "") ? n * 30 : n; t = s.slice(0, m.index); }
     else if (/毎月\s*$/.test(s)) { every = 30; t = s.replace(/\s*毎月\s*$/, ""); }
     else if (/毎週\s*$/.test(s)) { every = 7; t = s.replace(/\s*毎週\s*$/, ""); }
