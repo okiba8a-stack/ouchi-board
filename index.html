@@ -216,9 +216,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .credit { position: absolute; right: var(--pad-r); bottom: max(14px, env(safe-area-inset-bottom)); font-size: 11px; color: #fff; opacity: .7; text-shadow: 0 1px 6px rgba(0,0,0,.6); max-width: 46%; text-align: right; }
 /* 解説のある写真：右下の説明を押せる札にする */
 .credit.has-info { z-index: 3; opacity: .92; font-size: 13px; padding: 8px 12px; margin: -8px -12px; border-radius: 14px; cursor: pointer; }
-.credit.has-info .cr-name { display: block; font-size: clamp(17px, 2vw, 24px); font-weight: 700; line-height: 1.3; }
-.credit.has-info .cr-sub { font-size: 13px; opacity: .85; }
-.credit.has-info .cr-sub::after { content: "　くわしく ›"; opacity: .7; font-size: 11px; }
+.credit.has-info::after { content: "　くわしく ›"; opacity: .7; font-size: 11px; }
 .credit.has-info:active { background: rgba(0,0,0,.35); }
 .info-sheet { width: min(720px, 100%); }
 .info-title { font-size: 26px; font-weight: 700; line-height: 1.3; }
@@ -729,14 +727,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-16_0020"></script>
-<script src="gomi.js?v=2026-11-16_0020"></script>
-<script src="sun.js?v=2026-11-16_0020"></script>
+<script src="remind-parse.js?v=2026-11-16_0022"></script>
+<script src="gomi.js?v=2026-11-16_0022"></script>
+<script src="sun.js?v=2026-11-16_0022"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-16 00:20";
+  const VERSION = "2026-11-16 00:22";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔（設定がないとき）
   function photoEvery() { const m = Number(cfg && cfg.photoMin); return m > 0 ? m * 60000 : PHOTO_EVERY; }
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
@@ -1288,9 +1286,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
       wallInfo = info || null; $("credit").classList.toggle("has-info", !!wallInfo);
       const cr = $("credit"); cr.textContent = "";
       if (wallInfo) {
-        // 名前を大きく、その下に「国 ・ グループ」。押すとくわしい解説
-        const nm = wallInfo.title.length > 30 ? wallInfo.title.slice(0, 29) + "…" : wallInfo.title;
-        cr.append(el("span", "cr-name", nm), el("span", "cr-sub", [wallInfo.country, wallInfo.group].filter(Boolean).join(" ・ ")));
+        // 小さい文字で「名前 ・ 地名」（地名が分からなければグループ名）。押すとくわしい解説
+        const nm = wallInfo.title.length > 34 ? wallInfo.title.slice(0, 33) + "…" : wallInfo.title;
+        cr.textContent = `${nm} ・ ${wallInfo.country || wallInfo.group}`;
       } else cr.textContent = caption || "";
       $("home").classList.add("hasphoto"); updateDotsTone();
     };
