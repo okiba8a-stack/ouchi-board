@@ -105,6 +105,7 @@ h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; f
 .date .sub { font-size: .6em; opacity: .7; margin-left: 14px; letter-spacing: .12em; }
 .wx-now { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; margin-right: 6px; }
 .wx-now .v { font-family: var(--font-num); font-weight: 200; font-size: 46px; letter-spacing: -.02em; }
+.wx-sum .uv { font-size: 13px; color: var(--muted); } .wx-sum .uv.hi { color: #ffd98a; font-weight: 700; }
 .wx-now .l { font-size: 11px; letter-spacing: .25em; opacity: .7; margin-top: 4px; }
 .date .hol { font-size: .7em; margin-left: 14px; color: #ffc9b8; }
 .next { margin-top: 18px; font-size: clamp(15px, 1.7vw, 19px); display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
@@ -650,7 +651,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:31";
+  const VERSION = "2026-11-15 09:59";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -909,6 +910,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   let data = store.get("ouchi.last") || null;
   let warnList = [];   // 気象警報（checkWarn で更新）
   let warnPlace = null; // 最後に警報を読んだときの地点
+  let extra = { uv: {}, feels: {}, at: 0, place: "" };   // 紫外線・体感温度（loadExtra で更新）
   // 地点。裏方（スクリプトプロパティ PLACE・LAT・LON）が返す値を使う。古い裏方なら日野市
   function loc() {
     return { place: (data && data.place) || "東京都日野市", lat: Number(data && data.lat) || 35.6713, lon: Number(data && data.lon) || 139.3951 };
@@ -919,7 +921,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const w = data && data.weather;
     const wx = $("wx"); wx.textContent = "";
     const cur = w && w.hours ? nowTemp(w) : null;
-    if (cur != null) { const n = el("div", "wx-now"); n.append(el("span", "v", cur + "°"), el("span", "l", "いま")); wx.append(n); }
+    if (cur != null) {
+      const n = el("div", "wx-now"), fl = extraAt("feels");
+      n.append(el("span", "v", cur + "°"), el("span", "l", fl != null && Math.abs(fl - cur) >= 2 ? `体感 ${fl}°` : "いま")); wx.append(n);
+    }
     if (w && w.today) [["きょう", w.today, ""], ["あした", w.tomorrow, " sub"]].forEach(([lbl, d, cls]) => {
       if (!d) return;
       const [desc, kind] = WX(d.code);
@@ -1464,13 +1469,21 @@ input::placeholder { color: var(--muted); opacity: .8; }
   /* ---------- くわしい天気 ---------- */
   function openWeather() {
     const w = data && data.weather; if (!w || !w.today) return;
+    renderWxSum(w); openWeatherRest(w);
+  }
+  // くわしい天気の「きょう・あした」の欄（紫外線をあとから読んだときにも描き直す）
+  function renderWxSum(w) {
     const sum = $("wxSum"); sum.textContent = "";
     [["きょう", w.today], ["あした", w.tomorrow]].forEach(([lbl, d]) => {
       if (!d) return;
       const [desc, kind] = WX(d.code), box = el("div"), txt = el("div");
       txt.append(el("div", "lbl", lbl), el("div", "desc", desc), el("div", "temps", `最高 ${Math.round(d.max)}° / 最低 ${Math.round(d.min)}°　降水 ${d.pop ?? "—"}%`));
+      const uv = lbl === "きょう" ? uvMax(0) : uvMax(1);
+      if (uv != null) txt.append(el("div", "uv" + (uv >= 6 ? " hi" : ""), `紫外線 ${uv}（${uvWord(uv)}）`));
       box.append(icon(kind), txt); sum.append(box);
     });
+  }
+  function openWeatherRest(w) {
     const rl = rainLine(w); $("wxComment").textContent = ((warnList.length ? "発表中：" + warnList.map((x) => x.name).join("・") + "。 " : "") + rl + " " + baseComment(rl)).trim(); $("wxPlace").textContent = [data.place, sunLine(), "Open-Meteo"].filter(Boolean).join(" ・ ");
     const hrs = $("wxHours"); hrs.textContent = "";
     const now = new Date(); now.setMinutes(0, 0, 0);
@@ -1861,6 +1874,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       const cur = nowTemp(w);
       out.push(`天気は${WX(w.today.code)[0]}、最高${Math.round(w.today.max)}度、最低${Math.round(w.today.min)}度` + (cur != null ? `、いまは${cur}度` : "") + "。");
       const rl = rainLine(w); if (rl) out.push(rl);
+      const uv = uvMax(0); if (uv != null && uv >= 6 && h < 15) out.push(`紫外線が${uvWord(uv)}予報（${uv}）なので、日焼け止めを。`);
     }
     if (warnList.length) out.push(warnList.map((x) => x.name).join("と") + "が出ています。");
     if (data && data.events) {
@@ -1990,6 +2004,39 @@ input::placeholder { color: var(--muted); opacity: .8; }
   });
   $("wfClose").addEventListener("click", () => { $("wfBg").hidden = true; });
   $("wfBg").addEventListener("pointerdown", (e) => { if (e.target === $("wfBg")) $("wfBg").hidden = true; });
+
+  /* ---------- 紫外線・体感温度（Open-Meteo を画面から直接。紫外線は大気質の配信、体感は天気の配信。読めなければ出さない） ---------- */
+  const hourKey = (d) => `${ymd(d)}T${pad(d.getHours())}:00`;
+  function extraAt(kind, d) { const v = extra[kind][hourKey(d || new Date())]; return v == null ? null : Math.round(v); }
+  function uvMax(dayOff) {
+    const d = new Date(); d.setDate(d.getDate() + dayOff); const k = ymd(d);
+    const vs = Object.entries(extra.uv).filter(([t]) => t.startsWith(k)).map(([, v]) => v).filter((v) => v != null);
+    return vs.length ? Math.round(Math.max(...vs)) : null;
+  }
+  const uvWord = (u) => (u >= 11 ? "極端に強い" : u >= 8 ? "非常に強い" : u >= 6 ? "強い" : u >= 3 ? "中程度" : "弱い");
+  async function loadExtra() {
+    const L = loc();
+    if (Date.now() - extra.at < 30 * 60000 && extra.place === L.place) return;
+    const q = `latitude=${L.lat}&longitude=${L.lon}&timezone=Asia%2FTokyo&forecast_days=2`;
+    const get = async (url, key, kind) => {
+      try {
+        const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 12000);
+        const r = await fetch(url, { signal: ctl.signal }); clearTimeout(tm);
+        if (!r.ok) return false;
+        const j = await r.json(), h = j.hourly || {}, o = {};
+        (h.time || []).forEach((t, i) => { o[t] = h[key][i]; });
+        extra[kind] = o; return true;
+      } catch (e) { return false; }
+    };
+    const redraw = (ok) => {
+      if (!ok) return;
+      extra.at = Date.now(); extra.place = L.place; renderWeather();
+      if (!$("wxBg").hidden && data && data.weather && data.weather.today) renderWxSum(data.weather);
+    };
+    get(`https://air-quality-api.open-meteo.com/v1/air-quality?${q}&hourly=uv_index`, "uv_index", "uv").then(redraw);
+    get(`https://api.open-meteo.com/v1/forecast?${q}&hourly=apparent_temperature`, "apparent_temperature", "feels").then(redraw);
+  }
+  loadExtra(); setInterval(loadExtra, 10 * 60000);
 
   /* ---------- アシスタントのボタン ---------- */
   $("asChips").addEventListener("click", (e) => {
