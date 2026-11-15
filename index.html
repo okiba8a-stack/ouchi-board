@@ -313,6 +313,13 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .sheet .hours { grid-template-columns: repeat(8, minmax(0,1fr)); gap: 14px 4px; }
 .sheet .icon .sun, .sheet .icon .bolt { fill: #ffd98a; } .sheet .icon .cloud { fill: #fff; opacity: .8; } .sheet .icon .drop, .sheet .icon .snow { fill: #a9cdf5; opacity: 1; }
 .sheet .hours .p { color: #a9cdf5; }
+.wifi-in { display: flex; flex-direction: column; gap: 8px; }
+.wifi-in input { font: inherit; font-size: 16px; color: var(--ink); background: rgba(0,0,0,.18); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.wifi-sheet { width: min(460px, 100%); text-align: center; }
+.wf-qr { background: #fff; border-radius: 16px; padding: 18px; width: min(320px, 80vw); margin: 0 auto; }
+.wf-qr svg { display: block; width: 100%; height: auto; }
+.wf-txt { margin: 0; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+.wf-txt small { font-size: 15px; font-weight: 400; color: var(--muted); font-family: var(--font-num); }
 .link-btn { font: inherit; color: var(--accent); background: none; border: 0; padding: 6px 0 6px 10px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .cal-sheet { width: min(900px, 100%); }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
@@ -525,6 +532,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
           <p class="note" id="verNote"></p>
           <div class="rm-row wrap"><button class="btn" type="button" id="reload">最新版に更新</button><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reinstall">ホーム画面に入れ直す</button></div>
           <p class="rm-msg" id="reinstallMsg"></p>
+          <h2>来客用 Wi-Fi</h2>
+          <div class="wifi-in"><input type="text" id="wfSsid" placeholder="ネットワーク名（SSID）" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Wi-Fi のネットワーク名"><input type="text" id="wfPass" placeholder="パスワード" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Wi-Fi のパスワード"></div>
+          <div class="rm-row"><button class="btn" type="button" id="wfShow">QR を出す</button></div>
+          <p class="note">お客さんがカメラで読むと、そのままつながります。この端末だけに保存します。</p>
         </div>
       </div>
     </div></div>
@@ -569,6 +580,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
     <h2><span id="calTitle"></span> <small id="calNote"></small></h2>
     <div class="cal-grid" id="calGrid"></div>
     <div class="rm-row"><button class="btn" type="button" id="calPrev" aria-label="前の月">‹</button><button class="btn" type="button" id="calNow">今月</button><button class="btn" type="button" id="calNext" aria-label="次の月">›</button><span class="spacer"></span><button class="btn" type="button" id="calClose">閉じる</button></div>
+  </div>
+</div>
+
+<div class="sheet-bg" id="wfBg" hidden>
+  <div class="sheet wifi-sheet">
+    <h2>Wi-Fi</h2>
+    <div class="wf-qr" id="wfQr"></div>
+    <p class="wf-txt"><span id="wfName"></span><br><small id="wfPw"></small></p>
+    <div class="rm-row"><span class="spacer"></span><button class="btn" type="button" id="wfClose">閉じる</button></div>
   </div>
 </div>
 
@@ -630,7 +650,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:29";
+  const VERSION = "2026-11-15 09:31";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1947,6 +1967,30 @@ input::placeholder { color: var(--muted); opacity: .8; }
   });
   renderCd();
 
+  /* ---------- 来客用 Wi-Fi の QR（cfg.wifi に端末で持つ。QR の部品は押したときに読む） ---------- */
+  { const w = (cfg && cfg.wifi) || {}; $("wfSsid").value = w.s || ""; $("wfPass").value = w.p || ""; }
+  function loadQrLib() {
+    if (window.qrcode) return Promise.resolve();
+    return new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"; sc.onload = ok; sc.onerror = ng; document.head.append(sc); });
+  }
+  $("wfShow").addEventListener("click", async () => {
+    const ssid = $("wfSsid").value.trim(), pass = $("wfPass").value;
+    if (!ssid) { $("wfSsid").focus(); return; }
+    cfg = Object.assign({}, cfg || {}, { wifi: { s: ssid, p: pass } }); if (!DEMO) store.set("ouchi.cfg", cfg);
+    const esc = (v) => v.replace(/([\\;,:"])/g, "\\$1");
+    const text = `WIFI:T:${pass ? "WPA" : "nopass"};S:${esc(ssid)};${pass ? "P:" + esc(pass) + ";" : ""};`;
+    try {
+      await loadQrLib();
+      if (qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs["UTF-8"]) qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+      const q = qrcode(0, "M"); q.addData(text); q.make();
+      $("wfQr").innerHTML = q.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
+    } catch (e) { $("wfQr").textContent = "QR を作れませんでした（通信を確かめてください）"; }
+    $("wfName").textContent = ssid; $("wfPw").textContent = pass ? "パスワード：" + pass : "パスワードなし";
+    $("wfBg").hidden = false;
+  });
+  $("wfClose").addEventListener("click", () => { $("wfBg").hidden = true; });
+  $("wfBg").addEventListener("pointerdown", (e) => { if (e.target === $("wfBg")) $("wfBg").hidden = true; });
+
   /* ---------- アシスタントのボタン ---------- */
   $("asChips").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
@@ -2208,6 +2252,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   if (DEMO) {
     data = demoData(); checks = data.checks; showBoard(); tick(); render();
     if (params.get("ask")) setTimeout(() => ask(params.get("ask")), 300);   // 確認用
+    if (params.get("wifi")) { $("wfSsid").value = "おうちWi-Fi"; $("wfPass").value = "abc;123"; setTimeout(() => $("wfShow").click(), 300); }   // 確認用
     $("statusText").textContent = "試し表示";
     if (params.get("photo") !== "0") { demoPhotos = [demoPhoto(1), demoPhoto(0)]; nextWall(); setInterval(nextWall, 8000); }
     const p = Number(params.get("page")); if (p) goTo(p, true);
