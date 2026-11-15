@@ -2,7 +2,7 @@
    つながらないとき（iPad を開き直した直後に Wi-Fi がまだ、など）にも前回の画面を出すため、
    画面の部品を手元に残す。いつもネットを先に見るので、新しい版はふつうに読まれる。
    version.json と裏方（Apps Script）・外の配信は残さない（古い情報を出さないため）。 */
-const CACHE = "ouchi-board-v2";
+const CACHE = "ouchi-board-v3";
 const SHELL = ["./", "index.html", "remind-parse.js", "gomi.js", "sun.js", "manifest.webmanifest", "icon-180.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -28,8 +28,10 @@ self.addEventListener("fetch", (e) => {
     const cache = await caches.open(CACHE);
     // 画面を開くとき（?c=… が付く）は、アドレスの ? 以降を無視して index.html として残す
     const key = req.mode === "navigate" ? new Request(new URL("index.html", self.registration.scope).href) : req;
-    const net = fetch(req).then((res) => {
-      if (res && (res.ok || res.type === "opaque")) cache.put(key, res.clone()).catch(() => {});
+    // 同じサイトの部品は HTTP キャッシュ（GitHub Pages は10分）を通さず確かめる。変わっていなければ 304 で軽い
+    const net = fetch(req, same ? { cache: "no-cache" } : undefined).then((res) => {
+      // 中身の見えない応答（opaque）は、失敗でも成功に見えるので残さない
+      if (res && res.ok && res.type !== "opaque") e.waitUntil(cache.put(key, res.clone()).catch(() => {}));
       return res;
     });
     net.catch(() => {});   // 時間切れで手元の画面を出したあとに失敗しても、警告を出さない
@@ -41,7 +43,7 @@ self.addEventListener("fetch", (e) => {
       }
       return await net;
     } catch (err) {
-      const hit = await cache.match(key, { ignoreSearch: req.mode === "navigate" });
+      const hit = await cache.match(key, { ignoreSearch: same });   // 部品の ?v= が違っても、つながらないときは手元のものを出す
       if (hit) return hit;
       throw err;
     }

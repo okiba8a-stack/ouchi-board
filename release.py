@@ -5,6 +5,8 @@ v = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 p = "index.html"; s = open(p, encoding="utf-8").read()
 s, n = re.subn(r'const VERSION = "[^"]*";', 'const VERSION = "%s";' % v, s)
 assert n == 1
+# 部品のスクリプト（remind-parse.js など）にも版を付け、古い部品と新しい画面が混ざらないようにする
+s = re.sub(r'(<script src="[a-z-]+\.js)\?v=[^"]*"', lambda m: m.group(1) + '?v=' + v.replace(" ", "_").replace(":", "") + '"', s)
 open(p, "w", encoding="utf-8", newline="\n").write(s)
 open("version.json", "w", encoding="utf-8", newline="\n").write(json.dumps({"version": v}) + "\n")
 print("version", v)
