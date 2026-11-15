@@ -3,8 +3,8 @@
   "short_name": "おうちボード",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#eef1ee",
-  "theme_color": "#2f7a5f",
+  "background_color": "#151412",
+  "theme_color": "#151412",
   "icons": [
     { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }

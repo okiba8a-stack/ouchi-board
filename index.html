@@ -346,6 +346,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .al-sound { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .al-sound .al-sname { flex: 1 1 140px; min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
 .al-sound .btn { min-height: 40px; padding: 6px 14px; font-size: 14px; }
+.pf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.pf-row .pf-l { flex: 0 0 100%; font-size: 13px; color: var(--muted); }
+.pf-row input[type=time], .pf-row input[type=number], .pf-mail input[type=text] { font: inherit; font-size: 16px; color: var(--ink); background: rgba(0,0,0,.18); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; min-width: 0; }
+.pf-row .seg .btn, .pf-row .btn { min-height: 40px; padding: 6px 14px; font-size: 14px; }
+.pf-checks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.pf-mail { flex: 1 1 100%; display: flex; flex-direction: column; gap: 8px; }
 .link-btn { font: inherit; color: var(--accent); background: none; border: 0; padding: 6px 0 6px 10px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .cal-sheet { width: min(900px, 100%); }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
@@ -565,6 +571,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
           <p class="note" id="bandNote"></p>
           <div class="rm-row wrap"><button class="btn" type="button" id="reload">最新版に更新</button><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reinstall">ホーム画面に入れ直す</button></div>
           <p class="rm-msg" id="reinstallMsg"></p>
+          <h2>表示の設定</h2>
+          <div class="pf-row"><span class="pf-l">夜に暗くする</span><input type="time" id="pfNightFrom" aria-label="暗くし始める時刻"><span>〜</span><input type="time" id="pfNightTo" aria-label="明るく戻す時刻"><label class="allday"><input type="checkbox" id="pfNightOff">暗くしない</label></div>
+          <div class="pf-row"><span class="pf-l">写真の切り替え</span><div class="seg" id="pfPhoto"><button class="btn" type="button" data-min="1">1分</button><button class="btn" type="button" data-min="5">5分</button><button class="btn" type="button" data-min="15">15分</button><button class="btn" type="button" data-min="60">1時間</button></div></div>
+          <div class="pf-row"><span class="pf-l">時計の下の行に出すもの</span><div class="pf-checks" id="pfShow"></div></div>
+          <div class="pf-row"><span class="pf-l">大事なメールの条件</span><div class="pf-mail"><label class="allday"><input type="checkbox" id="pfMailImp">Gmail の「重要」マーク</label><input type="text" id="pfMailFrom" placeholder="大事にする差出人（例：ac.jp rakuten-card.co.jp）" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="大事にする差出人"><div class="rm-row"><span class="note">さかのぼる日数</span><input type="number" id="pfMailDays" min="1" max="30" inputmode="numeric" aria-label="さかのぼる日数" style="width:5em"><button class="btn primary" type="button" id="pfMailSave">保存</button></div></div></div>
+          <p class="rm-msg" id="pfMsg"></p>
           <h2>来客用 Wi-Fi</h2>
           <div class="wifi-in"><input type="text" id="wfSsid" placeholder="ネットワーク名（SSID）" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Wi-Fi のネットワーク名"><input type="text" id="wfPass" placeholder="パスワード" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Wi-Fi のパスワード"></div>
           <div class="rm-row"><button class="btn" type="button" id="wfShow">QR を出す</button></div>
@@ -684,15 +696,16 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_2319"></script>
-<script src="gomi.js?v=2026-11-15_2319"></script>
-<script src="sun.js?v=2026-11-15_2319"></script>
+<script src="remind-parse.js?v=2026-11-15_2342"></script>
+<script src="gomi.js?v=2026-11-15_2342"></script>
+<script src="sun.js?v=2026-11-15_2342"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 23:19";
-  const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
+  const VERSION = "2026-11-15 23:42";
+  const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔（設定がないとき）
+  function photoEvery() { const m = Number(cfg && cfg.photoMin); return m > 0 ? m * 60000 : PHOTO_EVERY; }
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
   const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -924,7 +937,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     renderAlarmTag(); checkAlarm(d);
     const h = d.getHours();
     const wasNight = document.body.classList.contains("night");
-    document.body.classList.toggle("night", h >= 23 || h < 6);
+    document.body.classList.toggle("night", isNight(d));
     if (wasNight !== document.body.classList.contains("night")) tintBar();   // 夜になった・朝になったら帯の色も変える
     if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); renderNext(); renderGomi(); renderSince(); renderCd(); renderWeek(); refresh(); loadHolidays(); extra.at = { uv: 0, feels: 0 }; loadExtra(); }
     else { renderNext(); renderReminders(); }
@@ -982,6 +995,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   /* ---------- 表示 ---------- */
   let data = store.get("ouchi.last") || null;
   let warnList = [];   // 気象警報（checkWarn で更新）
+  // 夜に暗くする時間帯（cfg.night = { from: "23:00", to: "06:00", off: false }）
+  function nightPref() { return Object.assign({ from: "23:00", to: "06:00", off: false }, (cfg && cfg.night) || {}); }
+  function isNight(d) {
+    const n = nightPref(); if (n.off) return false;
+    const m = (t) => { const [a, b] = String(t).split(":").map(Number); return a * 60 + (b || 0); };
+    const now = d.getHours() * 60 + d.getMinutes(), a = m(n.from), b = m(n.to);
+    return a === b ? false : a < b ? now >= a && now < b : now >= a || now < b;
+  }
   let warnPlace = null; // 最後に警報を読んだときの地点
   let topColor = null;  // 写真の上端の色（時刻表示の帯の色に使う）
   let extra = { uv: {}, feels: {}, at: { uv: 0, feels: 0 }, place: { uv: "", feels: "" } };   // 紫外線・体感温度（loadExtra で更新）
@@ -1038,6 +1059,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
     uEv.sort((a, b) => a.s - b.s);
     return { now, tEv, uEv };
   }
+  // 下の行の札の種類（「表示の設定」で出す・出さないを選ぶ。注意は必ず出す）
+  const NEXT_KINDS = [["warn", "気象警報"], ["next", "いま・つぎの予定"], ["gomi", "ごみの日"], ["rem", "リマインダー"], ["allday", "きょうの終日の予定"], ["mail", "メール"], ["cd", "カウントダウン"], ["since", "そろそろ"]];
+  function nextKind(tag) {
+    return tag === "気象" ? "warn" : tag === "いま" || tag === "つぎ" ? "next" : /ごみ/.test(tag) ? "gomi" : tag === "リマインダー" ? "rem" : tag === "きょう" ? "allday"
+      : tag === "メール" ? "mail" : /^あと|きょう！/.test(tag) ? "cd" : tag === "そろそろ" ? "since" : "keep";
+  }
   // 1枚目に出す「つぎの予定」
   function renderNext() {
     const box = $("next"); box.textContent = "";
@@ -1077,7 +1104,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (cs) add(el("span", "tag", cs.n === 0 ? "きょう！" : "あと" + cs.n + "日"), el("span", null, cs.x.t));
     const sd = sinceDue();
     if (sd.length) add(el("span", "tag", "そろそろ"), el("span", null, sd.map((x) => x.t).join("・")));
-    groups.slice(0, 6).forEach((g) => box.append(...g));
+    const hide = (cfg && cfg.hide) || [];
+    groups.filter((g) => !hide.includes(nextKind(g[0].textContent))).slice(0, 6).forEach((g) => box.append(...g));
   }
   const endOfToday = () => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; };
   // チェックを付けたものは、その時刻を過ぎたら一覧から消える。付けていないものは、その日の終わりまで残る
@@ -1167,7 +1195,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     });
   }
 
-  function render() { renderWeather(); renderCalendar(); renderReminders(); renderMemos(); renderWeek(); $("aiTag").textContent = data && data.ai ? "Claude が読み取ります" : ""; if (!rtDraft) renderRtEditor(); renderRoutines(); renderNews(); renderMail(); }
+  function render() { renderWeather(); renderCalendar(); renderReminders(); renderMemos(); renderWeek(); $("aiTag").textContent = data && data.ai ? "Claude が読み取ります" : ""; if (!rtDraft) renderRtEditor(); renderRoutines(); renderNews(); renderMail(); renderMailPrefs(); }
 
   /* ---------- 壁紙（自分の写真／山なみ／世界の絶景） ---------- */
   let photoIds = [], photoIdx = 0, photoFront = 0, wallBusy = false, demoPhotos = null, shown = null;
@@ -2291,6 +2319,43 @@ input::placeholder { color: var(--muted); opacity: .8; }
     b.classList.remove("armed"); b.textContent = "受信トレイを全部既読"; mailRead({ all: true });
   });
 
+  /* ---------- 表示の設定（夜の時間帯・写真の間隔・下の行・大事なメールの条件） ---------- */
+  function savePref(patch) { cfg = Object.assign({}, cfg || {}, patch); if (!DEMO) store.set("ouchi.cfg", cfg); }
+  {
+    const n = nightPref();
+    $("pfNightFrom").value = n.from; $("pfNightTo").value = n.to; $("pfNightOff").checked = !!n.off;
+    const saveNight = () => { savePref({ night: { from: $("pfNightFrom").value || "23:00", to: $("pfNightTo").value || "06:00", off: $("pfNightOff").checked } }); tick(); };
+    ["pfNightFrom", "pfNightTo", "pfNightOff"].forEach((id) => $(id).addEventListener("change", saveNight));
+    const drawPhoto = () => { const cur = Number(cfg && cfg.photoMin) || 5; $("pfPhoto").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.min) === cur))); };
+    $("pfPhoto").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; savePref({ photoMin: Number(b.dataset.min) }); drawPhoto(); if (window.__resetWallTimer) window.__resetWallTimer(); });
+    drawPhoto();
+    const box = $("pfShow"), hide = () => (cfg && cfg.hide) || [];
+    NEXT_KINDS.forEach(([k, label]) => {
+      const lb = el("label", "allday"), cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !hide().includes(k);
+      cb.addEventListener("change", () => { const h = hide().filter((x) => x !== k); if (!cb.checked) h.push(k); savePref({ hide: h }); renderNext(); });
+      lb.append(cb, label); box.append(lb);
+    });
+    $("pfMailSave").addEventListener("click", async () => {
+      const msg = $("pfMsg"); msg.classList.remove("err");
+      if (DEMO) { msg.textContent = "試し表示では保存しません。"; return; }
+      msg.textContent = "保存しています…";
+      try {
+        const r = await callApi({ action: "mailPrefs", important: $("pfMailImp").checked ? "1" : "0", from: $("pfMailFrom").value.trim(), days: $("pfMailDays").value || "3" });
+        if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
+        if (r.mail && data) { data.mail = r.mail; store.set("ouchi.last", data); renderMail(); renderNext(); }
+        msg.textContent = "大事なメールの条件を保存しました。";
+      } catch (e) { msg.classList.add("err"); msg.textContent = "保存できませんでした：" + e.message; }
+    });
+  }
+  let mailPrefsShown = false;
+  function renderMailPrefs() {
+    const p = data && data.mail && data.mail.prefs;
+    const busy = document.activeElement && document.activeElement.id === "pfMailFrom";
+    if (!p || busy || mailPrefsShown) return;
+    $("pfMailImp").checked = p.important; $("pfMailFrom").value = p.from || ""; $("pfMailDays").value = p.days || 3; mailPrefsShown = true;
+    if (p.custom) $("pfMsg").textContent = "いまは Apps Script の MAIL_QUERY が優先されています（消すと、ここの条件が使われます）。";
+  }
+
   /* ---------- アシスタントのボタン ---------- */
   $("asChips").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
@@ -2512,7 +2577,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       routines: [{ id: "a", title: "風呂掃除", days: [], order: 1 }, { id: "b", title: "皿洗い", days: [], order: 2 }, { id: "c", title: "洗濯", days: [1, 3, 5], order: 3 }],
       checks: { a: true }, streaks: { a: 6, b: 2 },
       mailBrief: { text: "大事なメール 2件\n・研究室：ゼミ資料の締切は 11/20（金）。カレンダーに入れました\n・楽天カード：11/27 に 89,900円の引き落とし\nほか：宣伝 14件、ログイン通知 3件", at: new Date().toISOString() },
-      mail: { unread: 12, important: [{ id: "d1", from: "研究室", subject: "ゼミ資料の締切について", at: new Date().toISOString() }, { id: "d2", from: "教務課", subject: "履修登録の確認", at: new Date().toISOString() }], recent: [{ id: "d3", from: "楽天カード", subject: "お支払予定金額のご案内", at: new Date(Date.now() - 864e5).toISOString() }] },
+      mail: { prefs: { important: true, from: "ac.jp", days: 3, custom: false }, unread: 12, important: [{ id: "d1", from: "研究室", subject: "ゼミ資料の締切について", at: new Date().toISOString() }, { id: "d2", from: "教務課", subject: "履修登録の確認", at: new Date().toISOString() }], recent: [{ id: "d3", from: "楽天カード", subject: "お支払予定金額のご案内", at: new Date(Date.now() - 864e5).toISOString() }] },
       news: ["ニュースの見出しがここに並びます", "見出しをタップすると記事が開きます", "少し大きめの文字で表示します", "一度に8件まで", "三分さわらなければ時計の画面に戻ります", "横にスワイプで画面が切り替わります"].map((t) => ({ title: t, source: "試し表示", url: "" })),
     };
   }
@@ -2572,7 +2637,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
   try { localStorage.removeItem("ouchi.photo"); } catch (e) {}
   setPhotos((data && data.photos) || []);   // 前回の一覧と端末内の写真で、通信を待たずに表示する
   if (wallMode !== "photos" || !photoIds.length) nextWall();
-  setInterval(nextWall, PHOTO_EVERY);
+  let wallTimer = setInterval(nextWall, photoEvery());
+  window.__resetWallTimer = () => { clearInterval(wallTimer); wallTimer = setInterval(nextWall, photoEvery()); };
   refresh(); setInterval(refresh, 5 * 60 * 1000);
   checkQuake(); setInterval(checkQuake, 60 * 1000);
   { const p0 = Number(params.get("page")); if (p0) goTo(p0, true); }

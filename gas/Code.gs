@@ -77,6 +77,7 @@ function doGet(e) {
   const key = PropertiesService.getScriptProperties().getProperty('KEY');
   if (!key || p.key !== key) return json_({ ok: false, error: 'bad_key' });
   try {
+    if (/^(remind|mark|edit|delete|event|say)$/.test(p.action)) bust_();
     switch (p.action) {
       case 'board': return json_(board_(p.date));
       case 'check': return json_(check_(p.date, p.id, p.on === '1'));
@@ -88,6 +89,7 @@ function doGet(e) {
       case 'memoSet': return json_(memoSet_(p.id, p.on === '1'));
       case 'memoDel': return json_(memoDel_(p.id));
       case 'mailRead': return json_(mailRead_(p.id, p.all === '1'));
+      case 'mailPrefs': return json_(mailPrefsSet_(p.important === '1', p.from, p.days));
       case 'photoDelete': return json_(photoDelete_(p.id));
       case 'edit': return json_(editItem_(p));
       case 'delete': return json_(deleteItem_(p));
@@ -126,6 +128,19 @@ function json_(obj) {
 
 /* ---------- まとめて返す ---------- */
 
+/* 予定・リマインダーは90秒だけ覚える（5分ごとの更新や Siri からの呼び出しを軽くする）。
+   ボードから書き換えたときは bust_() で世代を進め、すぐ新しい内容を返す。 */
+function gen_() { return CacheService.getScriptCache().get('gen') || '0'; }
+function bust_() { CacheService.getScriptCache().put('gen', String(Date.now()), 21600); }
+function cached_(key, sec, fn) {
+  const cache = CacheService.getScriptCache(), k = key + ':' + gen_();
+  const hit = cache.get(k);
+  if (hit) return JSON.parse(hit);
+  const v = fn();
+  try { const js = JSON.stringify(v); if (js.length < 90000) cache.put(k, js, sec); } catch (e) {}
+  return v;
+}
+
 function board_(dateStr) {
   const date = dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const weather = safe_(getWeather_);
@@ -136,8 +151,8 @@ function board_(dateStr) {
     place: PLACE,
     lat: LAT,
     lon: LON,
-    events: safe_(() => getEvents_(date)),
-    reminders: safe_(() => getReminders_(date)) || [],
+    events: safe_(() => cached_('ev:' + date, 90, () => getEvents_(date))),
+    reminders: safe_(() => cached_('rm:' + date, 90, () => getReminders_(date))) || [],
     weather: weather,
     comment: weather ? comment_(weather) : '',
     news: safe_(getNews_),
@@ -674,10 +689,37 @@ function memoDel_(id) {
 
 /* ---------- Gmail：未読の件数と、大事な未読メール（5分キャッシュ）。
    大事の条件はスクリプトプロパティ MAIL_QUERY で変えられる（例：in:inbox is:unread (is:important OR from:ac.jp)） ---------- */
+/* 「大事なメール」の条件。ボードの「表示の設定」から変える（スクリプトプロパティ MAIL_IMPORTANT・MAIL_FROM・MAIL_DAYS）。
+   MAIL_QUERY を手で入れてあれば、そちらを優先する。 */
+function mailPrefs_() {
+  return {
+    important: PROPS_.getProperty('MAIL_IMPORTANT') !== '0',
+    from: PROPS_.getProperty('MAIL_FROM') || '',
+    days: Number(PROPS_.getProperty('MAIL_DAYS')) || 3,
+    custom: !!PROPS_.getProperty('MAIL_QUERY'),
+  };
+}
+function mailQuery_() {
+  const custom = PROPS_.getProperty('MAIL_QUERY');
+  if (custom) return custom;
+  const p = mailPrefs_(), ors = [];
+  if (p.important) ors.push('is:important');
+  p.from.split(/[\s,、，]+/).filter(Boolean).slice(0, 20).forEach((f) => ors.push('from:' + f.replace(/[^\w.@+-]/g, '')));
+  if (!ors.length) ors.push('is:important');
+  return 'in:inbox is:unread newer_than:' + p.days + 'd (' + ors.join(' OR ') + ')';
+}
+function mailPrefsSet_(important, from, days) {
+  PROPS_.setProperty('MAIL_IMPORTANT', important ? '1' : '0');
+  PROPS_.setProperty('MAIL_FROM', String(from || '').slice(0, 400));
+  PROPS_.setProperty('MAIL_DAYS', String(Math.min(30, Math.max(1, Number(days) || 3))));
+  CacheService.getScriptCache().remove('mail');
+  return { ok: true, mail: getMail_() };
+}
+
 function getMail_() {
   const cache = CacheService.getScriptCache(), hit = cache.get('mail');
   if (hit) return JSON.parse(hit);
-  const q = PROPS_.getProperty('MAIL_QUERY') || 'in:inbox is:unread is:important newer_than:3d';
+  const q = mailQuery_();
   const pick = (th) => {
     const m = th.getMessages().pop(), from = String(m.getFrom()).replace(/\s*<.*>$/, '').replace(/^"|"$/g, '');
     return { id: th.getId(), from: from.slice(0, 30), subject: String(th.getFirstMessageSubject() || '（件名なし）').slice(0, 60), at: m.getDate().toISOString() };
@@ -686,8 +728,8 @@ function getMail_() {
   // 大事なもの以外の、新しい未読（メインのタブだけ）も少し出す
   const ids = {}; items.forEach((x) => { ids[x.id] = 1; });
   const recent = GmailApp.search('in:inbox is:unread category:primary', 0, 8).map(pick).filter((x) => !ids[x.id]).slice(0, 5);
-  const out = { unread: GmailApp.getInboxUnreadCount(), important: items, recent: recent };
-  cache.put('mail', JSON.stringify(out), 5 * 60);
+  const out = { unread: GmailApp.getInboxUnreadCount(), important: items, recent: recent, prefs: mailPrefs_() };
+  cache.put('mail', JSON.stringify(out), 90);
   return out;
 }
 
