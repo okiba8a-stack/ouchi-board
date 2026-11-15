@@ -428,6 +428,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
             </div>
           </form>
           <div class="seg as-chips" id="asChips">
+            <button class="btn" type="button" data-ask="きょうのまとめ">きょうのまとめ</button>
             <button class="btn" type="button" data-ask="きょうの予定は？">きょうの予定</button>
             <button class="btn" type="button" data-ask="あしたの予定は？">あしたの予定</button>
             <button class="btn" type="button" data-ask="あしたの天気は？">あしたの天気</button>
@@ -594,7 +595,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:11";
+  const VERSION = "2026-11-15 09:12";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1579,6 +1580,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         addTimer(sec, label); asReply((label ? label + "の" : "") + "タイマーをセットしました。"); return;
       }
     }
+    if (/まとめ|おはよう|ブリーフィング/.test(t) && t.length <= 12) { asReply(briefing()); return; }
     if (/ごみ|ゴミ/.test(t) && !/メモ|リマインド/.test(t)) {
       const wk = gomiWeekText(7);
       asReply(!gomiRules().length ? "ごみの日はまだ登録されていません。ツールの「ごみの日」に書いてください。" : wk.length ? wk.join("、") + "です。" : "この1週間に出せるごみはありません。");
@@ -1736,6 +1738,30 @@ input::placeholder { color: var(--muted); opacity: .8; }
     } catch (e) {}
   }
   loadHolidays(); setInterval(loadHolidays, 6 * 3600000);
+
+  /* ---------- きょうのまとめ（この端末にある情報だけで作る） ---------- */
+  function briefing() {
+    const now = new Date(), out = [];
+    const h = now.getHours();
+    out.push((h < 10 ? "おはようございます。" : h < 18 ? "" : "こんばんは。") + `${now.getMonth() + 1}月${now.getDate()}日${WD[now.getDay()]}曜日` + (holidayName(now) ? "、" + holidayName(now) : "") + "です。");
+    const w = data && data.weather;
+    if (w && w.today) {
+      const cur = nowTemp(w);
+      out.push(`天気は${WX(w.today.code)[0]}、最高${Math.round(w.today.max)}度、最低${Math.round(w.today.min)}度` + (cur != null ? `、いまは${cur}度` : "") + "。");
+      const rl = rainLine(w); if (rl) out.push(rl);
+    }
+    if (warnList.length) out.push(warnList.map((x) => x.name).join("と") + "が出ています。");
+    if (data && data.events) {
+      const { now: n2, tEv } = splitEvents();
+      const left = tEv.filter((x) => x.allDay || x.en > n2);
+      out.push(left.length ? "きょうの予定は、" + left.map((x) => (x.allDay ? "" : hm(x.s) + "から") + x.e.title).join("、") + "。" : "きょうの予定はもうありません。");
+    }
+    const due = liveReminders().filter((r) => !r.done && new Date(r.start) <= endOfToday());
+    if (due.length) out.push("リマインダーは、" + due.map((r) => r.title).join("、") + "。");
+    const g = gomiNotice(now); if (g) out.push((g[0] === "ごみ" ? "きょうは" : "あしたは") + g[1] + "の日です。");
+    const sd = sinceDue(); if (sd.length) out.push("そろそろ" + sd.map((x) => x.t).join("、") + "の時期です。");
+    return out.join(" ");
+  }
 
   /* ---------- アシスタントのボタン ---------- */
   $("asChips").addEventListener("click", (e) => {
@@ -1961,6 +1987,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   setInterval(tick, 10000);
   if (DEMO) {
     data = demoData(); checks = data.checks; showBoard(); tick(); render();
+    if (params.get("ask")) setTimeout(() => ask(params.get("ask")), 300);   // 確認用
     $("statusText").textContent = "試し表示";
     if (params.get("photo") !== "0") { demoPhotos = [demoPhoto(1), demoPhoto(0)]; nextWall(); setInterval(nextWall, 8000); }
     const p = Number(params.get("page")); if (p) goTo(p, true);
