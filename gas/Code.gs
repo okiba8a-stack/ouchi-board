@@ -90,6 +90,7 @@ function doGet(e) {
       case 'delete': return json_(deleteItem_(p));
       case 'event': return json_(event_(p.title, p.start, p.allday === '1', p.date));
       case 'photo': return json_(photo_(p.id));
+      case 'month': return json_(month_(p.ym));
       case 'ping': return json_({ ok: true });
       default: return json_({ ok: false, error: 'unknown_action' });
     }
@@ -151,9 +152,17 @@ function safe_(fn) {
 
 /* ---------- カレンダー ---------- */
 
-function getEvents_(date) {
+/** 月のカレンダー用：ym（2026-11）の月の予定。前後の週の分も少し入れる */
+function month_(ym) {
+  if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return { ok: false, error: 'bad_month' };
+  const first = new Date(ym + '-01T00:00:00+09:00');
+  const from = new Date(first.getTime() - 7 * 86400000);
+  return { ok: true, ym: ym, events: getEvents_(Utilities.formatDate(from, TZ, 'yyyy-MM-dd'), 7 + 31 + 14) };
+}
+
+function getEvents_(date, days) {
   const start = new Date(date + 'T00:00:00+09:00');
-  const end = new Date(start.getTime() + 8 * 86400000);
+  const end = new Date(start.getTime() + (days || 8) * 86400000);
   const seen = {};
   const out = [];
   const remId = PropertiesService.getScriptProperties().getProperty('REMIND_CAL_ID');
