@@ -652,14 +652,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1355"></script>
-<script src="gomi.js?v=2026-11-15_1355"></script>
-<script src="sun.js?v=2026-11-15_1355"></script>
+<script src="remind-parse.js?v=2026-11-15_1414"></script>
+<script src="gomi.js?v=2026-11-15_1414"></script>
+<script src="sun.js?v=2026-11-15_1414"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 13:55";
+  const VERSION = "2026-11-15 14:14";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1141,16 +1141,21 @@ input::placeholder { color: var(--muted); opacity: .8; }
   function showPhoto(url, caption, key) {
     if (key && key === shown) return;
     const img = new Image();
-    img.onload = () => {
+    img.onload = function () {
       const back = layers[1 - photoFront];
       back.style.backgroundImage = `url("${url}")`;
       back.classList.add("on"); layers[photoFront].classList.remove("on");
       photoFront = 1 - photoFront; shown = key || url;
       $("backdrop").style.backgroundImage = `url("${url}")`;
-      topColor = measureTop(img); tintBar();
+      topColor = measureTop(this); tintBar();
       $("credit").textContent = caption || "";
       $("home").classList.add("hasphoto"); updateDotsTone();
     };
+    // よそのサイトの写真（世界の絶景＝Bing）は CORS で読み、上端の色を測れるようにする。許可していないサイトなら指定なしで読み直す
+    if (/^https?:/.test(url) && !url.startsWith(location.origin)) {
+      img.crossOrigin = "anonymous";
+      img.onerror = () => { img.onerror = null; const again = new Image(); again.onload = img.onload.bind(again); again.src = url; };
+    }
     img.src = url;
   }
   // 山なみの絵（昼は明るい山なみ、夕方から朝は夕暮れ）
