@@ -343,6 +343,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .wf-qr svg { display: block; width: 100%; height: auto; }
 .wf-txt { margin: 0; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
 .wf-txt small { font-size: 15px; font-weight: 400; color: var(--muted); font-family: var(--font-num); }
+.al-sound { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.al-sound .al-sname { flex: 1 1 140px; min-width: 0; font-size: 15px; overflow-wrap: anywhere; }
+.al-sound .btn { min-height: 40px; padding: 6px 14px; font-size: 14px; }
 .link-btn { font: inherit; color: var(--accent); background: none; border: 0; padding: 6px 0 6px 10px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .cal-sheet { width: min(900px, 100%); }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
@@ -628,7 +631,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
     <input type="time" id="alTime" aria-label="アラームの時刻" required>
     <label class="allday"><input type="checkbox" id="alDaily">毎日くり返す</label>
     <label class="allday"><input type="checkbox" id="alRemind">iPhone にも通知する（リマインダーに登録）</label>
-    <p class="note">おうちボードを開いている間だけ鳴ります。iPad の音量を上げておいてください。</p>
+    <div class="al-sound">
+      <span class="note">音</span>
+      <span id="alSoundName" class="al-sname">ピピッ（標準）</span>
+      <input type="file" id="alSoundFile" accept="audio/*,.mp3,.m4a,.aac,.wav" hidden>
+      <button class="btn" type="button" id="alSoundPick">曲を選ぶ</button>
+      <button class="btn" type="button" id="alSoundTest">試しに鳴らす</button>
+      <button class="btn" type="button" id="alSoundReset" hidden>標準に戻す</button>
+    </div>
+    <p class="note">おうちボードを開いている間だけ鳴ります（アクセスガイド中も鳴ります）。曲は「ファイル」アプリの mp3・m4a などを選べます（Apple Music の曲はコピー防止のため使えません）。小さな音から1分かけて大きくなります。iPad の音量を上げておいてください。</p>
     <p class="rm-msg" id="alMsg"></p>
     <div class="rm-row"><button class="btn primary" type="submit">セット</button><button class="btn" type="button" id="alClose">やめる</button><span class="spacer"></span><button class="btn danger" type="button" id="alOff">アラームを消す</button></div>
   </form>
@@ -673,14 +684,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_2237"></script>
-<script src="gomi.js?v=2026-11-15_2237"></script>
-<script src="sun.js?v=2026-11-15_2237"></script>
+<script src="remind-parse.js?v=2026-11-15_2246"></script>
+<script src="gomi.js?v=2026-11-15_2246"></script>
+<script src="sun.js?v=2026-11-15_2246"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 22:37";
+  const VERSION = "2026-11-15 22:46";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1296,7 +1307,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     prefetching = true;
     try {
       const keys = (await idbDo("readonly", (st) => st.getAllKeys())) || [];
-      for (const k of keys) if (!photoIds.includes(k)) { await idbDo("readwrite", (st) => st.delete(k)); delete photoWait[k]; }
+      for (const k of keys) if (!String(k).startsWith("__") && !photoIds.includes(k)) {   // __ で始まるもの（アラームの曲）は写真ではないので残す
+        await idbDo("readwrite", (st) => st.delete(k)); delete photoWait[k]; }
       for (const id of photoIds.slice()) await getPhoto(id);
     } finally { prefetching = false; }
   }
@@ -1710,13 +1722,69 @@ input::placeholder { color: var(--muted); opacity: .8; }
     $("alBg").hidden = true;
   });
   let ringKind = null, ringDone = null;
+  /* アラームの音に自分の曲を使う（iPad の中＝IndexedDB に保存。鳴らすのは Web Audio で、1分かけて大きくする） */
+  const SOUND_KEY = "__alarmSound";
+  let songBuf = null, songSrc = null, songGain = null;
+  async function loadSong() {
+    if (songBuf || !store.get("ouchi.alarmSoundName")) return songBuf;
+    const ab = await idbDo("readonly", (st) => st.get(SOUND_KEY));
+    if (!ab || !actx) return null;
+    try { songBuf = await actx.decodeAudioData(ab.slice(0)); } catch (e) { songBuf = null; }
+    return songBuf;
+  }
+  async function playSong(fadeSec) {
+    unlockAudio();
+    const buf = await loadSong(); if (!buf || !actx) return false;
+    stopSong();
+    songSrc = actx.createBufferSource(); songSrc.buffer = buf; songSrc.loop = true;
+    songGain = actx.createGain(); songSrc.connect(songGain); songGain.connect(actx.destination);
+    const t0 = actx.currentTime;
+    songGain.gain.setValueAtTime(.06, t0); songGain.gain.linearRampToValueAtTime(1, t0 + fadeSec);
+    songSrc.start(); return true;
+  }
+  function stopSong() { try { if (songSrc) songSrc.stop(); } catch (e) {} songSrc = null; songGain = null; }
+  function renderSoundName() {
+    const nm = store.get("ouchi.alarmSoundName");
+    $("alSoundName").textContent = nm || "ピピッ（標準）";
+    $("alSoundReset").hidden = !nm;
+  }
+  $("alSoundPick").addEventListener("click", () => { unlockAudio(); $("alSoundFile").click(); });
+  $("alSoundFile").addEventListener("change", async () => {
+    const f = $("alSoundFile").files[0]; $("alSoundFile").value = ""; if (!f) return;
+    const msg = $("alMsg"); msg.classList.remove("err"); msg.textContent = "曲を読み込んでいます…";
+    try {
+      const ab = await f.arrayBuffer();
+      unlockAudio();
+      await actx.decodeAudioData(ab.slice(0));   // 鳴らせる形式か確かめる
+      await idbDo("readwrite", (st) => st.put(ab, SOUND_KEY));
+      store.set("ouchi.alarmSoundName", f.name.replace(/\.[^.]+$/, "")); songBuf = null;
+      renderSoundName(); msg.textContent = "アラームの音にしました。";
+    } catch (e) { msg.classList.add("err"); msg.textContent = "この曲は鳴らせませんでした（mp3・m4a などを選んでください。Apple Music の曲は使えません）。"; }
+  });
+  $("alSoundReset").addEventListener("click", async () => {
+    await idbDo("readwrite", (st) => st.delete(SOUND_KEY)); store.set("ouchi.alarmSoundName", null); songBuf = null; stopSong(); renderSoundName();
+  });
+  $("alSoundTest").addEventListener("click", async () => {
+    const b = $("alSoundTest");
+    if (songSrc) { stopSong(); b.textContent = "試しに鳴らす"; return; }
+    if (await playSong(3)) { b.textContent = "止める"; setTimeout(() => { if (b.textContent === "止める") { stopSong(); b.textContent = "試しに鳴らす"; } }, 15000); }
+    else { unlockAudio(); beep(); }
+  });
+  renderSoundName();
+
   function ringFor(kind, text, onStop) {
     ringKind = kind; ringDone = onStop;
     $("ringHead").textContent = kind === "alarm" ? "アラーム" : "タイマー";
     $("ringTime").textContent = text; $("ringTime").style.fontSize = text.length > 5 ? "44px" : "";
     $("ringBg").hidden = false;
     try { if (actx) actx.resume(); } catch (e) {}
-    let n = 0; beep(); ringTimer = setInterval(() => { beep(); if (++n > 150) stopRing(); }, 2000);   // 最長5分
+    // アラームで自分の曲があれば曲を（1分かけて大きく）、なければピピッ。どちらも最長5分
+    let n = 0;
+    const fallback = () => { beep(); ringTimer = setInterval(() => { beep(); if (++n > 150) stopRing(); }, 2000); };
+    if (kind === "alarm" && store.get("ouchi.alarmSoundName")) {
+      ringTimer = setTimeout(stopRing, 5 * 60000);
+      playSong(60).then((ok) => { if (!ok && ringTimer) { clearTimeout(ringTimer); fallback(); } });
+    } else fallback();
   }
   function checkAlarm(d) {
     if (!alarm || ringTimer) return;
@@ -1726,7 +1794,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     ringFor("alarm", alarm.time, null); goTo(0);
   }
   function stopRing() {
-    clearInterval(ringTimer); ringTimer = null; $("ringBg").hidden = true;
+    clearInterval(ringTimer); clearTimeout(ringTimer); ringTimer = null; stopSong(); $("ringBg").hidden = true;
     const kind = ringKind, cb = ringDone; ringKind = ringDone = null;
     if (cb) cb();
     if (kind === "alarm" && alarm && !alarm.daily) { alarm = null; store.set("ouchi.alarm", null); }
