@@ -550,6 +550,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <div class="tool-head"><h2>接続と更新</h2><button class="tool-x" type="button" aria-label="大きくする"><svg class="i-open" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg><svg class="i-close" viewBox="0 0 24 24"><path d="M20 10h-6V4M14 10l6-6M4 14h6v6M10 14l-6 6"/></svg></button></div>
         <div class="tool-body">
           <p class="note" id="verNote"></p>
+          <p class="note" id="bandNote"></p>
           <div class="rm-row wrap"><button class="btn" type="button" id="reload">最新版に更新</button><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reinstall">ホーム画面に入れ直す</button></div>
           <p class="rm-msg" id="reinstallMsg"></p>
           <h2>来客用 Wi-Fi</h2>
@@ -663,14 +664,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_2015"></script>
-<script src="gomi.js?v=2026-11-15_2015"></script>
-<script src="sun.js?v=2026-11-15_2015"></script>
+<script src="remind-parse.js?v=2026-11-15_2018"></script>
+<script src="gomi.js?v=2026-11-15_2018"></script>
+<script src="sun.js?v=2026-11-15_2018"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 20:15";
+  const VERSION = "2026-11-15 20:18";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1147,16 +1148,17 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const c = topColor || [35, 38, 43];
     const sh = document.documentElement.matches(".standalone:not(.under-bar)") ? .2 : .42;   // 上の影の濃さ（帯の方式では薄い）
     const mix = (v, k) => Math.round(page === 0 ? v * (1 - sh) + k * sh : v * .5);
-    const col = page === 0 && !$("home").classList.contains("hasphoto") ? getComputedStyle($("home")).backgroundColor : `rgb(${mix(c[0], 12)}, ${mix(c[1], 10)}, ${mix(c[2], 8)})`;
-    const bar = $("sbar");
-    if (bar.style.backgroundColor === col) return;
-    // 帯・ページの背景・theme-color をすべて同じ色にする。iOS が帯を見失ってページの背景色を使っても、同じ色になる
-    // （帯を作り直すと、その瞬間に iOS がページの背景＝ほぼ黒を使い、2回目以降が黒くなっていた）
-    bar.style.backgroundColor = col;
+    // 写真がまだないときは決まった暗い色（明るい灰色にすると、iOS がその色のまま読み直さないことがあった）
+    const col = `rgb(${mix(c[0], 12)}, ${mix(c[1], 10)}, ${mix(c[2], 8)})`;
+    const old = $("sbar");
+    if (old.style.backgroundColor === col) return;
+    // 先にページの背景を同じ色にしてから、帯を作り直す。
+    // ・iOS は帯が新しく置かれたときに色を読み直す（色を変えるだけ・一瞬隠すだけでは読み直さなかった）
+    // ・作り直した瞬間に帯を見失うとページの背景色を使う（ほぼ黒だったので、2回目以降が黒くなっていた）
     document.documentElement.style.backgroundColor = col;
     document.body.style.backgroundColor = col;
-    // 帯を一度隠して戻し、iOS に色を読み直させる
-    bar.style.display = "none"; requestAnimationFrame(() => { bar.style.display = ""; });
+    const bar = old.cloneNode(false); bar.style.backgroundColor = col; old.replaceWith(bar);
+    $("bandNote").textContent = `上端の帯の色：${col}（写真の色${topColor ? "を測れた" : "を測れず、決まった色"}）`;
     // ページの色の指定も合わせる（iOS が帯の色に使うことがある）
     let tc = document.querySelector('meta[name="theme-color"]:not([media])');
     if (!tc) { document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove()); tc = document.createElement("meta"); tc.name = "theme-color"; document.head.append(tc); }
