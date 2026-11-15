@@ -623,7 +623,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:24";
+  const VERSION = "2026-11-15 09:26";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -881,6 +881,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   /* ---------- 表示 ---------- */
   let data = store.get("ouchi.last") || null;
   let warnList = [];   // 気象警報（checkWarn で更新）
+  let warnPlace = null; // 最後に警報を読んだときの地点
   // 地点。裏方（スクリプトプロパティ PLACE・LAT・LON）が返す値を使う。古い裏方なら日野市
   function loc() {
     return { place: (data && data.place) || "東京都日野市", lat: Number(data && data.lat) || 35.6713, lon: Number(data && data.lon) || 139.3951 };
@@ -1287,6 +1288,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       data = r; store.set("ouchi.last", r);
       if (!pendingChecks) checks = r.checks || {};
       render(); setPhotos(r.photos || []);
+      if (warnPlace !== r.place) { warnPlace = r.place; checkWarn(); }   // 起動直後と、地点が変わったとき
       $("statusText").textContent = `${hm(new Date())} 更新 ・ 天気 Open-Meteo`;
     } catch (e) {
       $("statusText").textContent = `更新できませんでした（${e.message}）`;
@@ -1735,13 +1737,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (place === "東京都日野市") return { place, area: "1321200", office: "130000" };
     const c = store.get("ouchi.area"); if (c && c.place === place) return c;
     const r = await fetch("https://www.jma.go.jp/bosai/common/const/area.json"); if (!r.ok) return null;
-    const a = areaFrom(await r.json(), place); if (a) store.set("ouchi.area", a);
+    const a = areaFrom(await r.json(), place) || { place, area: null, office: null };
+    store.set("ouchi.area", a);
     return a;
   }
   async function checkWarn() {
     if (DEMO) { warnList = params.get("warn") === "1" ? [WARN["03"], WARN["14"]] : []; renderNext(); return; }
     try {
-      const A = await warnArea(); if (!A) return;
+      const A = await warnArea(); if (!A || !A.area) return;
       const r = await fetch(`https://www.jma.go.jp/bosai/warning/data/r8/${A.office}.json`, { cache: "no-store" });
       if (!r.ok) return;
       warnList = warnFrom(await r.json(), A.area);
@@ -1850,14 +1853,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const d0 = new Date(); calYm = ym || `${d0.getFullYear()}-${pad(d0.getMonth() + 1)}`;
     $("calBg").hidden = false; drawCal([]);
     if (DEMO) { drawCal(((data && data.events) || []).map(parseEv)); return; }
-    if (monthCache[calYm]) { drawCal(monthCache[calYm]); return; }
-    $("calNote").textContent = "読み込み中…";
+    const want = calYm, hit = monthCache[want];
+    if (hit) { drawCal(hit.evs); if (Date.now() - hit.t < 5 * 60000) return; }
+    else $("calNote").textContent = "読み込み中…";
     try {
-      const r = await callApi({ action: "month", ym: calYm });
+      const r = await callApi({ action: "month", ym: want });
       if (!r.ok) throw new Error(r.error === "unknown_action" ? "予定を出すには裏方（Apps Script）の更新が必要です" : r.error);
-      const evs = (r.events || []).map(parseEv); monthCache[r.ym] = evs;
-      if (r.ym === calYm) drawCal(evs);
-    } catch (e) { $("calNote").textContent = e.message; }
+      const evs = (r.events || []).map(parseEv); monthCache[want] = { t: Date.now(), evs };
+      if (want === calYm && !$("calBg").hidden) drawCal(evs);
+    } catch (e) { if (want === calYm) $("calNote").textContent = e.message; }
   }
   function drawCal(evs) {
     const [y, m] = calYm.split("-").map(Number);
@@ -1919,24 +1923,31 @@ input::placeholder { color: var(--muted); opacity: .8; }
 
   /* ---------- メモ・買い物 ---------- */
   /* いつもの買い物：一覧に出てきたメモを数えておき（端末に保存）、よく出るものを候補のボタンにする */
-  let memoHist = store.get("ouchi.memoHist") || { n: {}, seen: [] };
+  // n は品目ごとの [回数, 最後に見た時刻]。数が増えたら、回数が少なく古いものから捨てる
+  let memoHist = (() => {
+    const h = store.get("ouchi.memoHist") || {}, n = Object.create(null);
+    Object.entries(h.n || {}).forEach(([k, v]) => { n[k] = Array.isArray(v) ? v : [Number(v) || 0, 0]; });
+    return { n, seen: Array.isArray(h.seen) ? h.seen : [] };
+  })();
   function countMemos(list) {
     let changed = false;
+    const seen = new Set(memoHist.seen);
     list.forEach((m) => {
-      if (!m.id || String(m.id).startsWith("tmp") || memoHist.seen.includes(m.id)) return;
-      memoHist.seen.push(m.id); memoHist.n[m.text] = (memoHist.n[m.text] || 0) + 1; changed = true;
+      if (!m.id || String(m.id).startsWith("tmp") || seen.has(m.id)) return;
+      seen.add(m.id); memoHist.seen.push(m.id);
+      const v = memoHist.n[m.text] || [0, 0]; memoHist.n[m.text] = [v[0] + 1, Date.now()]; changed = true;
     });
     if (!changed) return;
-    memoHist.seen = memoHist.seen.slice(-400);
-    const top = Object.entries(memoHist.n).sort((a, b) => b[1] - a[1]).slice(0, 60);
-    memoHist.n = Object.fromEntries(top);
-    if (!DEMO) store.set("ouchi.memoHist", memoHist);
+    memoHist.seen = memoHist.seen.slice(-3000);
+    const keep = Object.entries(memoHist.n).sort((a, b) => b[1][0] - a[1][0] || b[1][1] - a[1][1]).slice(0, 150);
+    memoHist.n = Object.create(null); keep.forEach(([k, v]) => { memoHist.n[k] = v; });
+    if (!DEMO) store.set("ouchi.memoHist", { n: Object.fromEntries(keep), seen: memoHist.seen });
   }
   function renderMemoSug(list) {
     const box = $("memoSug"); box.textContent = "";
     const now = new Set(list.filter((m) => !m.done).map((m) => m.text));
-    const hist = DEMO ? { 牛乳: 5, 卵: 4, 食パン: 3, トイレットペーパー: 2, 納豆: 2, 単3電池: 1 } : memoHist.n;
-    Object.entries(hist).filter(([t, n]) => n >= 2 && !now.has(t)).sort((a, b) => b[1] - a[1]).slice(0, 6).forEach(([t]) => {
+    const hist = DEMO ? { 牛乳: [5], 卵: [4], 食パン: [3], トイレットペーパー: [2], 納豆: [2], 単3電池: [1] } : memoHist.n;
+    Object.entries(hist).map(([t, v]) => [t, v[0]]).filter(([t, n]) => n >= 2 && !now.has(t)).sort((a, b) => b[1] - a[1]).slice(0, 6).forEach(([t]) => {
       const b = el("button", "btn", t); b.type = "button"; b.setAttribute("aria-label", t + "を追加");
       b.addEventListener("click", () => addMemo(t)); box.append(b);
     });
