@@ -529,7 +529,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <section class="page" aria-label="ニュース">
     <div class="page-inner"><div class="news-wrap">
       <ul class="news-list" id="news"><li class="empty">読み込み中…</li></ul>
-      <div class="foot"><span id="statusText"></span><button type="button" id="toSettings">設定</button></div>
+      <div class="foot"><span id="statusText"></span><button type="button" id="toSettings">接続と更新</button></div>
     </div></div>
   </section>
 
@@ -625,7 +625,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:26";
+  const VERSION = "2026-11-15 09:27";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
