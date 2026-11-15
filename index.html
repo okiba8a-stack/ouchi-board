@@ -646,14 +646,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1156"></script>
-<script src="gomi.js?v=2026-11-15_1156"></script>
-<script src="sun.js?v=2026-11-15_1156"></script>
+<script src="remind-parse.js?v=2026-11-15_1326"></script>
+<script src="gomi.js?v=2026-11-15_1326"></script>
+<script src="sun.js?v=2026-11-15_1326"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 11:56";
+  const VERSION = "2026-11-15 13:26";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -970,29 +970,39 @@ input::placeholder { color: var(--muted); opacity: .8; }
   function renderNext() {
     const box = $("next"); box.textContent = "";
     const { now, tEv, uEv } = splitEvents();
+    // 札ごとにまとめ、大事な順に並べる。多すぎるときは後ろ（優先度の低いもの）を省く（ほかの画面で見られる）
+    const groups = [], add = (...nodes) => groups.push(nodes);
+    // 1. 裏方から2時間以上読めていないとき
+    const age = data && data.at ? Date.now() - Date.parse(data.at) : 0;
+    if (!DEMO && age > 2 * 3600000) add(el("span", "tag", "注意"), el("span", "warn-on", `${dayStr(new Date(data.at))} ${hm(new Date(data.at))} から更新できていません`));
+    // 2. 気象警報・注意報
+    if (warnList.length) add(el("span", "tag", "気象"), el("span", warnList[0].level >= 30 ? "warn-on strong" : "warn-on", warnList.map((w) => w.name).join("・")));
+    // 3. いま・つぎの予定
     const cur = tEv.find((x) => !x.allDay && x.s <= now && x.en > now);
     const nxt = tEv.find((x) => !x.allDay && x.s > now) || uEv[0];
-    const allDay = tEv.filter((x) => x.allDay).map((x) => x.e.title).join("・");
-    if (cur) box.append(el("span", "tag", "いま"), el("span", null, cur.e.title), el("span", "left", `〜${hm(cur.en)}`));
+    if (cur) add(el("span", "tag", "いま"), el("span", null, cur.e.title), el("span", "left", `〜${hm(cur.en)}`));
     else if (nxt) {
-      box.append(el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title));
+      const g = [el("span", "tag", "つぎ"), el("span", "when", (ymd(nxt.s) === today ? "" : dayStr(nxt.s) + " ") + (nxt.allDay ? "" : hm(nxt.s))), el("span", null, nxt.e.title)];
       // 2時間以内なら残り時間（「あと25分」「あと1時間10分」）
       const mins = Math.ceil((nxt.s - now) / 60000);
-      if (!nxt.allDay && mins > 0 && mins <= 120) box.append(el("span", "left" + (mins <= 15 ? " soon" : ""), "あと" + (mins >= 60 ? Math.floor(mins / 60) + "時間" + (mins % 60 ? (mins % 60) + "分" : "") : mins + "分")));
+      if (!nxt.allDay && mins > 0 && mins <= 120) g.push(el("span", "left" + (mins <= 15 ? " soon" : ""), "あと" + (mins >= 60 ? Math.floor(mins / 60) + "時間" + (mins % 60 ? (mins % 60) + "分" : "") : mins + "分")));
+      add(...g);
     }
-    if (allDay) box.append(el("span", "tag", "きょう"), el("span", null, allDay));
-    if (warnList.length) box.append(el("span", "tag", "気象"), el("span", warnList[0].level >= 30 ? "warn-on strong" : "warn-on", warnList.map((w) => w.name).join("・")));
-    // 裏方から2時間以上読めていないときは、古い情報だと分かるように
-    const age = data && data.at ? Date.now() - Date.parse(data.at) : 0;
-    if (!DEMO && age > 2 * 3600000) box.append(el("span", "tag", "注意"), el("span", "warn-on", `${dayStr(new Date(data.at))} ${hm(new Date(data.at))} から更新できていません`));
-    const cs = cdSoon()[0];
-    if (cs) box.append(el("span", "tag", cs.n === 0 ? "きょう！" : "あと" + cs.n + "日"), el("span", null, cs.x.t));
-    const sd = sinceDue();
-    if (sd.length) box.append(el("span", "tag", "そろそろ"), el("span", null, sd.map((x) => x.t).join("・")));
-    const g = gomiNotice(now);
-    if (g) box.append(el("span", "tag gomi", g[0]), el("span", null, g[1]));
+    // 4. ごみ
+    const gm = gomiNotice(now);
+    if (gm) add(el("span", "tag gomi", gm[0]), el("span", null, gm[1]));
+    // 5. きょうのリマインダー
     const due = liveReminders().filter((r) => !r.done && new Date(r.start) <= endOfToday()).map((r) => r.title).join("・");
-    if (due) box.append(el("span", "tag", "リマインダー"), el("span", null, due));
+    if (due) add(el("span", "tag", "リマインダー"), el("span", null, due));
+    // 6. きょうの終日の予定
+    const allDay = tEv.filter((x) => x.allDay).map((x) => x.e.title).join("・");
+    if (allDay) add(el("span", "tag", "きょう"), el("span", null, allDay));
+    // 7. カウントダウン、8. そろそろ
+    const cs = cdSoon()[0];
+    if (cs) add(el("span", "tag", cs.n === 0 ? "きょう！" : "あと" + cs.n + "日"), el("span", null, cs.x.t));
+    const sd = sinceDue();
+    if (sd.length) add(el("span", "tag", "そろそろ"), el("span", null, sd.map((x) => x.t).join("・")));
+    groups.slice(0, 6).forEach((g) => box.append(...g));
   }
   const endOfToday = () => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; };
   // チェックを付けたものは、その時刻を過ぎたら一覧から消える。付けていないものは、その日の終わりまで残る
