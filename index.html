@@ -93,6 +93,9 @@ h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; f
   linear-gradient(to top, rgba(12,10,8,.72) 0%, rgba(12,10,8,.28) 34%, rgba(12,10,8,0) 58%),
   linear-gradient(to bottom, rgba(12,10,8,.42) 0%, rgba(12,10,8,0) 30%); }
 .home.hasphoto .scrim { opacity: 1; }
+html.standalone:not(.under-bar) .scrim { background:
+  linear-gradient(to top, rgba(12,10,8,.72) 0%, rgba(12,10,8,.28) 34%, rgba(12,10,8,0) 58%),
+  linear-gradient(to bottom, rgba(12,10,8,.2) 0%, rgba(12,10,8,0) 22%); }
 .home-inner { position: relative; height: 100%; padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l); display: flex; flex-direction: column; justify-content: space-between; }
 .home.hasphoto .home-inner { color: #fff; text-shadow: 0 1px 14px rgba(0,0,0,.45); }
 .wx { align-self: flex-end; display: flex; align-items: center; gap: 22px; }
@@ -660,14 +663,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1838"></script>
-<script src="gomi.js?v=2026-11-15_1838"></script>
-<script src="sun.js?v=2026-11-15_1838"></script>
+<script src="remind-parse.js?v=2026-11-15_2015"></script>
+<script src="gomi.js?v=2026-11-15_2015"></script>
+<script src="sun.js?v=2026-11-15_2015"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 18:38";
+  const VERSION = "2026-11-15 20:15";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1132,7 +1135,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     try {
       const c = document.createElement("canvas"), w = 48, h = 6; c.width = w; c.height = h;
       const x = c.getContext("2d", { willReadFrequently: true });
-      x.drawImage(img, 0, 0, img.naturalWidth, Math.max(1, img.naturalHeight * .08), 0, 0, w, h);
+      const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+      x.drawImage(img, 0, 0, iw, Math.max(1, ih * .08), 0, 0, w, h);
       const d = x.getImageData(0, 0, w, h).data; let r = 0, g = 0, b = 0;
       for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
       const n = d.length / 4; return [r / n, g / n, b / n];
@@ -1141,12 +1145,18 @@ input::placeholder { color: var(--muted); opacity: .8; }
   // 時刻表示の帯の色：時計の画面は写真の上端（上の影 .scrim の 42% を重ねた色）、ほかの画面はぼかした壁紙（明るさ半分）
   function tintBar() {
     const c = topColor || [35, 38, 43];
-    const mix = (v, k) => Math.round(page === 0 ? v * (1 - .42) + k * .42 : v * .5);
+    const sh = document.documentElement.matches(".standalone:not(.under-bar)") ? .2 : .42;   // 上の影の濃さ（帯の方式では薄い）
+    const mix = (v, k) => Math.round(page === 0 ? v * (1 - sh) + k * sh : v * .5);
     const col = page === 0 && !$("home").classList.contains("hasphoto") ? getComputedStyle($("home")).backgroundColor : `rgb(${mix(c[0], 12)}, ${mix(c[1], 10)}, ${mix(c[2], 8)})`;
-    const old = $("sbar");
-    if (old.style.backgroundColor === col) return;
-    // iOS は固定の帯の色を、帯が新しく置かれたときに読み直すので、色を変えるたびに作り直す
-    const bar = old.cloneNode(false); bar.style.backgroundColor = col; old.replaceWith(bar);
+    const bar = $("sbar");
+    if (bar.style.backgroundColor === col) return;
+    // 帯・ページの背景・theme-color をすべて同じ色にする。iOS が帯を見失ってページの背景色を使っても、同じ色になる
+    // （帯を作り直すと、その瞬間に iOS がページの背景＝ほぼ黒を使い、2回目以降が黒くなっていた）
+    bar.style.backgroundColor = col;
+    document.documentElement.style.backgroundColor = col;
+    document.body.style.backgroundColor = col;
+    // 帯を一度隠して戻し、iOS に色を読み直させる
+    bar.style.display = "none"; requestAnimationFrame(() => { bar.style.display = ""; });
     // ページの色の指定も合わせる（iOS が帯の色に使うことがある）
     let tc = document.querySelector('meta[name="theme-color"]:not([media])');
     if (!tc) { document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove()); tc = document.createElement("meta"); tc.name = "theme-color"; document.head.append(tc); }
@@ -1163,6 +1173,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       photoFront = 1 - photoFront; shown = key || url;
       $("backdrop").style.backgroundImage = `url("${url}")`;
       topColor = measureTop(this); tintBar();
+      if (!topColor && /^https?:/.test(url)) fetch(url, { mode: "cors" }).then((r) => r.blob()).then((b) => createImageBitmap(b)).then((bmp) => { const c = measureTop(bmp); if (c && shown === (key || url)) { topColor = c; tintBar(); } }).catch(() => {});
       $("credit").textContent = caption || "";
       $("home").classList.add("hasphoto"); updateDotsTone();
     };
