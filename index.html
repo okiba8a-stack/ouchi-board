@@ -646,14 +646,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1126"></script>
-<script src="gomi.js?v=2026-11-15_1126"></script>
-<script src="sun.js?v=2026-11-15_1126"></script>
+<script src="remind-parse.js?v=2026-11-15_1156"></script>
+<script src="gomi.js?v=2026-11-15_1156"></script>
+<script src="sun.js?v=2026-11-15_1156"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 11:26";
+  const VERSION = "2026-11-15 11:56";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1321,6 +1321,11 @@ input::placeholder { color: var(--muted); opacity: .8; }
     try {
       const r = await callApi({ action: "board", date: today });
       if (!r.ok) throw new Error(r.error === "bad_key" ? "合言葉が違います" : r.error);
+      // 裏方が天気を取れなかったときは、手元の前回の天気をきょうの日付に合わせて使う
+      if (!r.weather && data && data.weather && Array.isArray(data.weather.days)) {
+        const i = data.weather.days.findIndex((x) => x && x.date === today);
+        if (i >= 0) r.weather = Object.assign({}, data.weather, { today: data.weather.days[i], tomorrow: data.weather.days[i + 1] || null, stale: true });
+      }
       data = r; store.set("ouchi.last", r);
       if (!pendingChecks) checks = r.checks || {};
       render(); setPhotos(r.photos || []);
@@ -1486,7 +1491,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     });
   }
   function openWeatherRest(w) {
-    const rl = rainLine(w); $("wxComment").textContent = ((warnList.length ? "発表中：" + warnList.map((x) => x.name).join("・") + "。 " : "") + rl + " " + baseComment(rl)).trim(); $("wxPlace").textContent = [data.place, sunLine(), "Open-Meteo"].filter(Boolean).join(" ・ ");
+    const rl = rainLine(w); $("wxComment").textContent = ((warnList.length ? "発表中：" + warnList.map((x) => x.name).join("・") + "。 " : "") + rl + " " + baseComment(rl)).trim(); $("wxPlace").textContent = [data.place, sunLine(), w.stale ? "Open-Meteo（つながらないため前回の予報）" : "Open-Meteo"].filter(Boolean).join(" ・ ");
     const hrs = $("wxHours"); hrs.textContent = "";
     const now = new Date(); now.setMinutes(0, 0, 0);
     (w.hours || []).filter((h) => new Date(h.time) >= now).slice(0, 24).forEach((h) => {

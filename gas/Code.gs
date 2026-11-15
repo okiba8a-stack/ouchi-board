@@ -218,7 +218,18 @@ function getWeather_() {
     '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
     '&hourly=temperature_2m,weather_code,precipitation_probability' +
     '&timezone=Asia%2FTokyo&forecast_days=7';
-  const d = JSON.parse(UrlFetchApp.fetch(url).getContentText());
+  let d;
+  try {
+    d = JSON.parse(UrlFetchApp.fetch(url).getContentText());
+  } catch (e) {
+    // Open-Meteo につながらないときは、6時間以内に取った前回の天気を、きょうの日付に合わせて返す
+    const old = cache.get(ck + ':stale');
+    if (!old) throw e;
+    const w0 = JSON.parse(old), today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+    const i = (w0.days || []).findIndex((x) => x && x.date === today);
+    if (i < 0) throw e;
+    return Object.assign(w0, { today: w0.days[i], tomorrow: w0.days[i + 1] || null, stale: true });
+  }
   const day = (i) => d.daily && d.daily.time[i] ? {
     date: d.daily.time[i],
     code: d.daily.weather_code[i],
@@ -234,7 +245,9 @@ function getWeather_() {
   }));
   const days = (d.daily && d.daily.time || []).map((t, i) => day(i));
   const w = { today: day(0), tomorrow: day(1), days: days, hours: hours.slice(0, 72), fetchedAt: new Date().toISOString() };
-  cache.put(ck, JSON.stringify(w), 30 * 60);
+  const js = JSON.stringify(w);
+  cache.put(ck, js, 30 * 60);
+  cache.put(ck + ':stale', js, 6 * 60 * 60);   // つながらないとき用（キャッシュの上限は6時間）
   return w;
 }
 
