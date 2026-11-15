@@ -6,7 +6,6 @@
 <title>おうちボード</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="おうちボード">
 <meta name="theme-color" content="#f4f0e8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#151412" media="(prefers-color-scheme: dark)">
@@ -54,17 +53,19 @@ body.night::after { opacity: .5; visibility: visible; transition: opacity 1.2s; 
 body.night .home .photo.on { opacity: .12; }
 body.night .home { background: #151412; }
 body.night .photo, body.night .photo.on { transform: none; transition: opacity 2.4s ease; }
-/* iOS 26〜27 のホーム画面アプリ対策（2026-11-15 第2版）。
-   ・写真を時刻・電池の表示の裏まで出すため black-translucent にする。
-   ・このとき iOS は時刻表示の下 約40pt までをぼかす（Liquid Glass の scroll edge effect。ページからは消せない。
-     色の帯を置く方法は black-translucent では効かず、meta を外すと上が色の帯になる）。
-     そこで写真だけを上端まで出し、文字とボタンはぼかしの範囲（上端＋40px）より下に置く。
-   ・時刻表示（白い文字）が明るい写真でも読めるよう、上端にうすい影を敷く。 */
+/* iOS 26〜27 のホーム画面アプリ対策（2026-11-15 第3版。本人の選択「帯にして天気を右上に」）。
+   ・black-translucent（写真を時刻表示の裏まで出す）だと、iOS が上端 約40pt を必ずぼかす。ページからは消せない。
+   ・そこで black-translucent をやめる。中身は時刻表示の下から始まり、時刻表示の部分は帯になる。
+   ・帯の色は、上端から4px下の真ん中にある「幅90%以上・高さ10px超・背景色つきの固定の帯」の色を iOS が使う
+     （WebKit の LocalFrameView::fixedContainerEdges）。.sbar の色を写真の上端の色に合わせて、帯を写真になじませる。
+     background-clip: text で、帯そのものは画面に何も描かない（色は設定から読まれる）。
+   ・black-translucent のころに追加した古いアイコン（under-bar）は、中身が時刻表示の下に入るので、文字をぼかしの下に置く。 */
 @supports (height: 100lvh) { html.under-bar, html.under-bar body { height: 100lvh; } }
-/* 実機ではぼかしが40pxより下まで届いたので余裕を多めに。上端の高さが 0 と報告される機種でも 24px とみなす */
-html.standalone { --sa-b: max(var(--sa-t), 24px); --pad-t: calc(var(--sa-b) + 60px); }
+html.standalone.under-bar { --sa-b: max(var(--sa-t), 24px); --pad-t: calc(var(--sa-b) + 60px); }
 .topshade { display: none; position: fixed; top: 0; left: 0; right: 0; height: calc(var(--sa-b, 0px) + 60px); background-image: linear-gradient(rgba(0,0,0,.38), rgba(0,0,0,0)); z-index: 30; pointer-events: none; }
-html.standalone .topshade { display: block; }
+html.standalone.under-bar .topshade { display: block; }
+.sbar { display: none; position: fixed; top: 0; left: 0; right: 0; height: 12px; background-color: #1d1f24; -webkit-background-clip: text; background-clip: text; color: transparent; z-index: 30; pointer-events: none; }
+html.standalone:not(.under-bar) .sbar { display: block; }
 h2 { margin: 0; font-weight: 700; font-size: 13px; letter-spacing: .14em; color: var(--muted); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; font-size: 12px; }
 
@@ -409,6 +410,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 </section>
 
 <div class="topshade" aria-hidden="true"></div>
+<div class="sbar" id="sbar" aria-hidden="true"></div>
 <div class="backdrop" id="backdrop" hidden></div>
 
 <main class="pager" id="pager" hidden>
@@ -636,7 +638,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   if (standalone) root.classList.add("standalone");
   /* 確認用：?sa=24 で「ホーム画面アプリで上端の余白が24px」のときの見た目にする */
   var fake = /[?&]sa=(\d+)/.exec(location.search);
-  if (fake) { root.classList.add("standalone", "under-bar"); root.style.setProperty("--sa-t", fake[1] + "px"); return; }
+  if (fake) { root.classList.add("standalone"); if (fake[1] !== "0") { root.classList.add("under-bar"); root.style.setProperty("--sa-t", fake[1] + "px"); } return; }   // ?sa=0 は新しいアイコン（帯）
   function check(){
     if (!standalone || !document.body) return;
     var p = document.createElement("div");
@@ -650,14 +652,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1350"></script>
-<script src="gomi.js?v=2026-11-15_1350"></script>
-<script src="sun.js?v=2026-11-15_1350"></script>
+<script src="remind-parse.js?v=2026-11-15_1353"></script>
+<script src="gomi.js?v=2026-11-15_1353"></script>
+<script src="sun.js?v=2026-11-15_1353"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 13:50";
+  const VERSION = "2026-11-15 13:53";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -725,9 +727,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
   // 上端が写真にならない古い設定のアイコン（ホーム画面アプリなのに中身が時刻表示の下に入っていない）なら知らせる
   setTimeout(() => {   // 上端の判定（DOMContentLoaded で動く）が済んでから
     const root = document.documentElement;
-    if (root.classList.contains("standalone") && !root.classList.contains("under-bar")) {
+    if (root.classList.contains("standalone") && root.classList.contains("under-bar")) {
       const m = $("reinstallMsg"); m.classList.add("err");
-      m.textContent = "このアイコンは古い設定です。「ホーム画面に入れ直す」で入れ直すと、写真が時刻・電池の表示の裏まで出ます。";
+      m.textContent = "このアイコンは古い設定です（上がぼやけます）。「ホーム画面に入れ直す」で入れ直すと、ぼかしがなくなり、天気が右上に戻ります。";
     }
   }, 1500);
 
@@ -814,7 +816,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("toolScrim").addEventListener("click", closeTool);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTool(); });
   function goToTool(name) { goTo(TOOLS); openTool(name); }
-  function updateDotsTone() { $("dots").classList.toggle("onphoto", page === 0 && $("home").classList.contains("hasphoto")); }
+  function updateDotsTone() { $("dots").classList.toggle("onphoto", page === 0 && $("home").classList.contains("hasphoto")); if (typeof tintBar === "function") tintBar(); }
   dots.forEach((d, k) => d.addEventListener("click", () => goTo(k)));
   document.addEventListener("keydown", (e) => {
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
@@ -926,6 +928,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   let data = store.get("ouchi.last") || null;
   let warnList = [];   // 気象警報（checkWarn で更新）
   let warnPlace = null; // 最後に警報を読んだときの地点
+  let topColor = null;  // 写真の上端の色（時刻表示の帯の色に使う）
   let extra = { uv: {}, feels: {}, at: { uv: 0, feels: 0 }, place: { uv: "", feels: "" } };   // 紫外線・体感温度（loadExtra で更新）
   // 地点。裏方（スクリプトプロパティ PLACE・LAT・LON）が返す値を使う。古い裏方なら日野市
   function loc() {
@@ -1113,6 +1116,24 @@ input::placeholder { color: var(--muted); opacity: .8; }
   let world = [], worldAt = 0, worldIdx = 0;
   let wallMode = store.get("ouchi.wall") || "photos";
   const layers = [$("photoA"), $("photoB")];
+  // 写真の上端（上から8%）の平均の色。読めない写真（よそのサイトの絵）は null
+  function measureTop(img) {
+    try {
+      const c = document.createElement("canvas"), w = 48, h = 6; c.width = w; c.height = h;
+      const x = c.getContext("2d", { willReadFrequently: true });
+      x.drawImage(img, 0, 0, img.naturalWidth, Math.max(1, img.naturalHeight * .08), 0, 0, w, h);
+      const d = x.getImageData(0, 0, w, h).data; let r = 0, g = 0, b = 0;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+      const n = d.length / 4; return [r / n, g / n, b / n];
+    } catch (e) { return null; }
+  }
+  // 時刻表示の帯の色：時計の画面は写真の上端（上の影 .scrim の 42% を重ねた色）、ほかの画面はぼかした壁紙（明るさ半分）
+  function tintBar() {
+    const c = topColor || [35, 38, 43];
+    const mix = (v, k) => Math.round(page === 0 ? v * (1 - .42) + k * .42 : v * .5);
+    const col = page === 0 && !$("home").classList.contains("hasphoto") ? getComputedStyle($("home")).backgroundColor : `rgb(${mix(c[0], 12)}, ${mix(c[1], 10)}, ${mix(c[2], 8)})`;
+    $("sbar").style.backgroundColor = col;
+  }
   // key が今と同じなら何もしない（同じ絵をフェードし直さない）
   function showPhoto(url, caption, key) {
     if (key && key === shown) return;
@@ -1123,6 +1144,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       back.classList.add("on"); layers[photoFront].classList.remove("on");
       photoFront = 1 - photoFront; shown = key || url;
       $("backdrop").style.backgroundImage = `url("${url}")`;
+      topColor = measureTop(img); tintBar();
       $("credit").textContent = caption || "";
       $("home").classList.add("hasphoto"); updateDotsTone();
     };
