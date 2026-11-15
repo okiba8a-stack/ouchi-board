@@ -597,7 +597,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:17";
+  const VERSION = "2026-11-15 09:18";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -662,6 +662,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
     catch (e) { msg.textContent = "コピーできませんでした。このアドレスを Safari で開いてください：" + url; msg.style.wordBreak = "break-all"; }
   });
   $("verNote").textContent = "版：" + VERSION + (window.__saDiag ? "（" + window.__saDiag + "）" : "");
+  // 上端が写真にならない古い設定のアイコン（ホーム画面アプリなのに中身が時刻表示の下に入っていない）なら知らせる
+  setTimeout(() => {   // 上端の判定（DOMContentLoaded で動く）が済んでから
+    const root = document.documentElement;
+    if (root.classList.contains("standalone") && !root.classList.contains("under-bar")) {
+      const m = $("reinstallMsg"); m.classList.add("err");
+      m.textContent = "このアイコンは古い設定です。「ホーム画面に入れ直す」で入れ直すと、写真が時刻・電池の表示の裏まで出ます。";
+    }
+  }, 1500);
 
   /* ---------- 裏方（Apps Script）を呼ぶ ---------- */
   async function callApi(q, c) {
