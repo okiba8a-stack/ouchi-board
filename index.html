@@ -111,6 +111,10 @@ html.standalone:not(.under-bar) .scrim { background:
 .clock, .date, .next, .comment { width: fit-content; max-width: 100%; }
 .alarm-tag { display: inline-block; margin-left: 16px; font-size: .62em; opacity: .85; font-family: var(--font-num); font-weight: 300; }
 .clock { font-family: var(--font-num); font-weight: 200; font-size: clamp(96px, 19vw, 250px); line-height: .9; letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin-left: -.04em; }
+/* 秒：時計の右下に小さく。幅を決めておき、数字が変わっても時計が動かないようにする */
+.clock .sec { display: inline-block; margin-left: .2em; font-size: .27em; font-weight: 300; letter-spacing: 0; opacity: .72; }
+.clock .sec i { display: inline-block; width: .62em; text-align: center; font-style: normal; will-change: transform, opacity; }
+body.night .clock .sec { opacity: .45; }
 .date { font-size: clamp(20px, 2.6vw, 30px); font-weight: 500; margin-top: 14px; }
 .date .sub { font-size: .6em; opacity: .7; margin-left: 14px; letter-spacing: .12em; }
 .wx-now { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; margin-right: 6px; }
@@ -426,7 +430,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     <div class="home-inner">
       <div class="wx" id="wx"></div>
       <div>
-        <div class="clock" id="clock">--:--</div>
+        <div class="clock" id="clock"><span id="clockHM">--:--</span><span class="sec" id="clockSec" aria-hidden="true"><i></i><i></i></span></div>
         <div class="date" id="date"></div>
         <div class="next" id="next"></div>
         <div class="comment" id="comment" hidden></div>
@@ -664,14 +668,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_2018"></script>
-<script src="gomi.js?v=2026-11-15_2018"></script>
-<script src="sun.js?v=2026-11-15_2018"></script>
+<script src="remind-parse.js?v=2026-11-15_2228"></script>
+<script src="gomi.js?v=2026-11-15_2228"></script>
+<script src="sun.js?v=2026-11-15_2228"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 20:18";
+  const VERSION = "2026-11-15 22:28";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -893,7 +897,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   let today = ymd(new Date());
   function tick() {
     const d = new Date();
-    $("clock").textContent = hm(d);
+    $("clockHM").textContent = hm(d);
     document.querySelectorAll(".bar-clock").forEach((c) => { c.textContent = hm(d); });
     document.querySelectorAll(".bar-date").forEach((c) => { c.textContent = `${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）`; });
     const dEl = $("date"); dEl.textContent = "";
@@ -907,6 +911,27 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); renderNext(); renderGomi(); renderSince(); renderCd(); renderWeek(); refresh(); loadHolidays(); extra.at = { uv: 0, feels: 0 }; loadExtra(); }
     else { renderNext(); renderReminders(); }
   }
+
+  // 秒：tick（10秒おき）とは別に、秒の数字2つだけを毎秒書き換える。変わった桁だけ下からふわっと出す（夜と「動きを減らす」設定では出すだけ）
+  const calm = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
+  let secTimer = 0;
+  function secTick() {
+    const d = new Date(), t = pad(d.getSeconds()), digs = $("clockSec").children;
+    const move = !calm.matches && !document.body.classList.contains("night");
+    for (let i = 0; i < 2; i++) {
+      const c = digs[i];
+      if (c.textContent === t[i]) continue;
+      const first = !c.textContent;
+      c.textContent = t[i];
+      if (move && !first && c.animate) c.animate([{ opacity: 0, transform: "translateY(.22em)" }, { opacity: 1, transform: "none" }], { duration: 380, easing: "cubic-bezier(.2,.7,.2,1)" });
+    }
+    // 分が変わる瞬間に時計もそろえる（tick は10秒おきなので、待つと「:00 秒なのに前の分」になる）
+    const t2 = hm(d);
+    if ($("clockHM").textContent !== t2) { $("clockHM").textContent = t2; document.querySelectorAll(".bar-clock").forEach((c) => { c.textContent = t2; }); }
+    secTimer = setTimeout(secTick, 1000 - d.getMilliseconds() + 8);   // 秒の変わり目に合わせ直す（ずれがたまらない）
+  }
+  // 画面が見えていない間は止める
+  document.addEventListener("visibilitychange", () => { clearTimeout(secTimer); if (document.visibilityState === "visible") secTick(); });
 
   // 画面をつけたままにする（対応している端末だけ）
   let lock = null;
@@ -2443,7 +2468,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
 
   /* ---------- 起動 ---------- */
-  setInterval(tick, 10000);
+  setInterval(tick, 10000); secTick();
   // つながらないときも前回の画面を出す（sw.js）。つながり直したらすぐ読み直す
   if ("serviceWorker" in navigator && location.protocol !== "file:" && !DEMO) navigator.serviceWorker.register("sw.js").catch(() => {});
   window.addEventListener("online", () => { refresh(); checkWarn(); loadHolidays(); });
