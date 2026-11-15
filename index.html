@@ -99,6 +99,10 @@ h2 small { font-family: var(--font-body); font-weight: 400; letter-spacing: 0; f
 .clock { font-family: var(--font-num); font-weight: 200; font-size: clamp(96px, 19vw, 250px); line-height: .9; letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin-left: -.04em; }
 .date { font-size: clamp(20px, 2.6vw, 30px); font-weight: 500; margin-top: 14px; }
 .date .sub { font-size: .6em; opacity: .7; margin-left: 14px; letter-spacing: .12em; }
+.wx-now { display: flex; flex-direction: column; align-items: flex-end; line-height: 1; margin-right: 6px; }
+.wx-now .v { font-family: var(--font-num); font-weight: 200; font-size: 46px; letter-spacing: -.02em; }
+.wx-now .l { font-size: 11px; letter-spacing: .25em; opacity: .7; margin-top: 4px; }
+.date .hol { font-size: .7em; margin-left: 14px; color: #ffc9b8; }
 .next { margin-top: 18px; font-size: clamp(15px, 1.7vw, 19px); display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
 .next .tag { font-size: 11px; letter-spacing: .25em; opacity: .7; }
 .next .warn-on { color: #ffe08a; font-weight: 700; }
@@ -590,7 +594,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 09:09";
+  const VERSION = "2026-11-15 09:11";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -792,7 +796,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
     document.querySelectorAll(".bar-clock").forEach((c) => { c.textContent = hm(d); });
     document.querySelectorAll(".bar-date").forEach((c) => { c.textContent = `${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）`; });
     const dEl = $("date"); dEl.textContent = "";
-    dEl.append(`${d.getMonth()+1}月${d.getDate()}日　${WD[d.getDay()]}曜日`, el("span", "sub", `令和${d.getFullYear()-2018}年`));
+    dEl.append(`${d.getMonth()+1}月${d.getDate()}日　${WD[d.getDay()]}曜日`);
+    const hol = holidayName(d);
+    if (hol) dEl.append(el("span", "hol", hol));
+    dEl.append(el("span", "sub", `令和${d.getFullYear()-2018}年`));
     renderAlarmTag(); checkAlarm(d);
     const h = d.getHours();
     document.body.classList.toggle("night", h >= 23 || h < 6);
@@ -836,6 +843,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
   function renderWeather() {
     const w = data && data.weather;
     const wx = $("wx"); wx.textContent = "";
+    const cur = w && w.hours ? nowTemp(w) : null;
+    if (cur != null) { const n = el("div", "wx-now"); n.append(el("span", "v", cur + "°"), el("span", "l", "いま")); wx.append(n); }
     if (w && w.today) [["きょう", w.today, ""], ["あした", w.tomorrow, " sub"]].forEach(([lbl, d, cls]) => {
       if (!d) return;
       const [desc, kind] = WX(d.code);
@@ -1706,6 +1715,27 @@ input::placeholder { color: var(--muted); opacity: .8; }
     $("sinceText").value = ""; saveSince(sinceItems().concat([it]));
   });
   renderSince();
+
+  /* ---------- いまの気温（毎時の予報のうち、いまの時刻のもの） ---------- */
+  function nowTemp(w) {
+    const h0 = new Date(); h0.setMinutes(0, 0, 0);
+    const h = (w.hours || []).find((x) => new Date(x.time).getTime() === h0.getTime());
+    return h && h.temp != null ? Math.round(h.temp) : null;
+  }
+
+  /* ---------- 祝日（holidays-jp。1日1回読む） ---------- */
+  let holidays = (store.get("ouchi.hol") || {}).data || {};
+  function holidayName(d) { return holidays[ymd(d)] || ""; }
+  async function loadHolidays() {
+    const c = store.get("ouchi.hol");
+    if (c && c.day === ymd(new Date()) && c.data) return;
+    try {
+      const r = await fetch("https://holidays-jp.github.io/api/v1/date.json");
+      if (!r.ok) return;
+      holidays = await r.json(); store.set("ouchi.hol", { day: ymd(new Date()), data: holidays }); tick();
+    } catch (e) {}
+  }
+  loadHolidays(); setInterval(loadHolidays, 6 * 3600000);
 
   /* ---------- アシスタントのボタン ---------- */
   $("asChips").addEventListener("click", (e) => {
