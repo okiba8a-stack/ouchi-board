@@ -652,14 +652,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-15_1353"></script>
-<script src="gomi.js?v=2026-11-15_1353"></script>
-<script src="sun.js?v=2026-11-15_1353"></script>
+<script src="remind-parse.js?v=2026-11-15_1355"></script>
+<script src="gomi.js?v=2026-11-15_1355"></script>
+<script src="sun.js?v=2026-11-15_1355"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-15 13:53";
+  const VERSION = "2026-11-15 13:55";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
   const pad = (n) => String(n).padStart(2, "0");
@@ -1014,7 +1014,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
     // 6. きょうの終日の予定
     const allDay = tEv.filter((x) => x.allDay).map((x) => x.e.title).join("・");
     if (allDay) add(el("span", "tag", "きょう"), el("span", null, allDay));
-    // 7. カウントダウン、8. そろそろ
+    // 7. 大事な未読メール（件数だけ。件名はアシスタントで聞く）
+    const im = data && data.mail && data.mail.important;
+    if (im && im.length) add(el("span", "tag", "メール"), el("span", null, `大事な未読 ${im.length}件`));
+    // 8. カウントダウン、9. そろそろ
     const cs = cdSoon()[0];
     if (cs) add(el("span", "tag", cs.n === 0 ? "きょう！" : "あと" + cs.n + "日"), el("span", null, cs.x.t));
     const sd = sinceDue();
@@ -1740,6 +1743,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
       if (sh) { const n = daysSince(sh.d); asReply(`${sh.t}は${n <= 0 ? "きょう" : n + "日前"}にやりました` + (sh.every ? `（${sh.every}日ごと。${n >= sh.every ? "そろそろです" : "あと" + (sh.every - n) + "日"}）。` : "。")); return; }
       if (cd) { const n = daysUntil(cd.d); asReply(n === 0 ? `${cd.t}はきょうです。` : `${cd.t}まで、あと${n}日です。`); return; }
     }
+    if (/^(メール|めーる|未読)/.test(t) || /メール(は|ある|来て|きて)/.test(t)) {
+      const ml = data && data.mail;
+      if (!ml) { asReply(DEMO ? "試し表示ではメールは読めません。" : "メールを読むには、裏方（Apps Script）の更新と setup の実行が必要です。"); return; }
+      asReply(`受信トレイの未読は${ml.unread}件です。` + (ml.important.length ? "大事なものは、" + ml.important.map((m) => m.from + "「" + m.subject + "」").join("、") + "。" : "大事な未読はありません。"));
+      return;
+    }
     if (/(ごみ|ゴミ)(の日|は|って|出せる|いつ)/.test(t) && !/メモ|リマインド|\d+時|朝|夜|に出す/.test(t)) {
       const wk = gomiWeekText(7);
       asReply(!gomiRules().length ? "ごみの日はまだ登録されていません。ツールの「ごみの日」に書いてください。" : wk.length ? wk.join("、") + "です。" : "この1週間に出せるごみはありません。");
@@ -1945,6 +1954,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (due.length) out.push("リマインダーは、" + due.map((r) => r.title).join("、") + "。");
     const g = gomiNotice(now); if (g) out.push((g[0] === "ごみ" ? "きょうは" : "あしたは") + g[1] + "の日です。");
     cdSoon().forEach((y) => out.push(y.n === 0 ? `きょうは${y.x.t}の日です。` : `${y.x.t}まで、あと${y.n}日です。`));
+    const ml = data && data.mail;
+    if (ml && ml.important && ml.important.length) out.push(`大事な未読メールが${ml.important.length}件あります（${ml.important.slice(0, 3).map((m) => m.from + "「" + m.subject + "」").join("、")}）。`);
     const sd = sinceDue(); if (sd.length) out.push("そろそろ" + sd.map((x) => x.t).join("、") + "の時期です。");
     return out.join(" ");
   }
@@ -2321,6 +2332,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       reminders: [{ id: "r1", title: "牛乳を買う", start: at(0, 23, 50).toISOString(), done: true }, { id: "r2", title: "パンチェッタのラップを外す", start: at(7, 9).toISOString() }],
       routines: [{ id: "a", title: "風呂掃除", days: [], order: 1 }, { id: "b", title: "皿洗い", days: [], order: 2 }, { id: "c", title: "洗濯", days: [1, 3, 5], order: 3 }],
       checks: { a: true }, streaks: { a: 6, b: 2 },
+      mail: { unread: 12, important: [{ from: "研究室", subject: "ゼミ資料の締切について", at: new Date().toISOString() }, { from: "教務課", subject: "履修登録の確認", at: new Date().toISOString() }] },
       news: ["ニュースの見出しがここに並びます", "見出しをタップすると記事が開きます", "少し大きめの文字で表示します", "一度に8件まで", "三分さわらなければ時計の画面に戻ります", "横にスワイプで画面が切り替わります"].map((t) => ({ title: t, source: "試し表示", url: "" })),
     };
   }

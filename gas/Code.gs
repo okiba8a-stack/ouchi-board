@@ -32,6 +32,8 @@ function setup() {
   CalendarApp.getDefaultCalendar().getName();
   UrlFetchApp.fetch('https://api.open-meteo.com/v1/forecast?latitude=35&longitude=139&daily=weather_code&forecast_days=1');
   getReminderCal_(true);
+  GmailApp.getInboxUnreadCount();   // Gmail を読む許可（未読の件数を出すため）
+  if (typeof Tasks !== 'undefined') Logger.log('メモ・買い物の保存先: Google ToDo リスト「' + TASKLIST_NAME + '」（id ' + taskListId_() + '）');
   const folder = getPhotoFolder_(true);
   Logger.log('写真フォルダ（ここに入れた写真がボードに出ます）: ' + folder.getUrl());
   Logger.log('合言葉（key）: ' + key);
@@ -143,6 +145,7 @@ function board_(dateStr) {
     streaks: safe_(() => getStreaks_(date, routines)) || {},
     photos: safe_(getPhotoIds_) || [],
     memos: safe_(getMemos_) || [],
+    mail: safe_(getMail_),
     ai: !!PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY'),
     at: new Date().toISOString(),
   };
@@ -600,7 +603,34 @@ function memoSheet_() {
   return sh;
 }
 
+/* メモ・買い物の保存先。Apps Script の「サービス」に Tasks API を足すと、Google ToDo リストの「おうちボード」に切り替わる
+   （iPhone の Google ToDo アプリでも見られる）。足していなければ、これまでどおりスプレッドシートの memos シート。 */
+const TASKLIST_NAME = 'おうちボード';
+function useTasks_() {
+  return typeof Tasks !== 'undefined' && PROPS_.getProperty('MEMO_TASKS') !== 'off';
+}
+function taskListId_() {
+  let id = PROPS_.getProperty('TASKLIST_ID');
+  if (id) { try { Tasks.Tasklists.get(id); return id; } catch (e) { id = null; } }
+  const lists = (Tasks.Tasklists.list({ maxResults: 100 }).items || []);
+  const hit = lists.find((l) => l.title === TASKLIST_NAME);
+  id = hit ? hit.id : Tasks.Tasklists.insert({ title: TASKLIST_NAME }).id;
+  PROPS_.setProperty('TASKLIST_ID', id);
+  // はじめて切り替えたときだけ、スプレッドシートの済んでいないメモを移す
+  if (!PROPS_.getProperty('MEMO_MIGRATED')) {
+    memoSheet_().getDataRange().getValues().slice(1).filter((r) => r[0] && r[1] && !(r[2] === true || String(r[2]).toUpperCase() === 'TRUE'))
+      .forEach((r) => Tasks.Tasks.insert({ title: String(r[1]) }, id));
+    PROPS_.setProperty('MEMO_MIGRATED', '1');
+  }
+  return id;
+}
+
 function getMemos_() {
+  if (useTasks_()) {
+    const items = Tasks.Tasks.list(taskListId_(), { showCompleted: true, showHidden: false, maxResults: 100 }).items || [];
+    return items.filter((t) => t.title && !t.deleted).sort((a, b) => String(a.position).localeCompare(String(b.position)))
+      .map((t) => ({ id: t.id, text: t.title, done: t.status === 'completed' }));
+  }
   return memoSheet_().getDataRange().getValues().slice(1).filter((r) => r[0] && r[1])
     .map((r) => ({ id: String(r[0]), text: String(r[1]), done: r[2] === true || String(r[2]).toUpperCase() === 'TRUE' }));
 }
@@ -608,6 +638,10 @@ function getMemos_() {
 function memoAdd_(text) {
   text = String(text || '').trim().slice(0, 200);
   if (!text) throw new Error('内容が空です');
+  if (useTasks_()) {
+    const t = Tasks.Tasks.insert({ title: text }, taskListId_());
+    return { ok: true, id: t.id, memos: getMemos_() };
+  }
   const id = 'm' + Date.now().toString(36);
   memoSheet_().appendRow([id, text, false, new Date()]);
   return { ok: true, id: id, memos: getMemos_() };
@@ -620,15 +654,35 @@ function memoRow_(sh, id) {
 }
 
 function memoSet_(id, on) {
+  if (useTasks_()) {
+    Tasks.Tasks.patch(on ? { status: 'completed' } : { status: 'needsAction', completed: null }, taskListId_(), id);
+    return { ok: true };
+  }
   const lock = LockService.getScriptLock(); lock.waitLock(10000);
   try { const sh = memoSheet_(); sh.getRange(memoRow_(sh, id), 3, 1, 2).setValues([[on, new Date()]]); } finally { lock.releaseLock(); }
   return { ok: true };
 }
 
 function memoDel_(id) {
+  if (useTasks_()) { Tasks.Tasks.remove(taskListId_(), id); return { ok: true }; }
   const lock = LockService.getScriptLock(); lock.waitLock(10000);
   try { const sh = memoSheet_(); sh.deleteRow(memoRow_(sh, id)); } finally { lock.releaseLock(); }
   return { ok: true };
+}
+
+/* ---------- Gmail：未読の件数と、大事な未読メール（5分キャッシュ）。
+   大事の条件はスクリプトプロパティ MAIL_QUERY で変えられる（例：in:inbox is:unread (is:important OR from:ac.jp)） ---------- */
+function getMail_() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('mail');
+  if (hit) return JSON.parse(hit);
+  const q = PROPS_.getProperty('MAIL_QUERY') || 'in:inbox is:unread is:important newer_than:3d';
+  const items = GmailApp.search(q, 0, 5).map((th) => {
+    const m = th.getMessages().pop(), from = String(m.getFrom()).replace(/\s*<.*>$/, '').replace(/^"|"$/g, '');
+    return { from: from.slice(0, 30), subject: String(th.getFirstMessageSubject() || '（件名なし）').slice(0, 60), at: m.getDate().toISOString() };
+  });
+  const out = { unread: GmailApp.getInboxUnreadCount(), important: items };
+  cache.put('mail', JSON.stringify(out), 5 * 60);
+  return out;
 }
 
 /* ---------- アシスタント（ボードの入力欄と、Siri のショートカットから呼ぶ） ---------- */
