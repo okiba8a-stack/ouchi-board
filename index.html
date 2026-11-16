@@ -727,14 +727,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-16_0022"></script>
-<script src="gomi.js?v=2026-11-16_0022"></script>
-<script src="sun.js?v=2026-11-16_0022"></script>
+<script src="remind-parse.js?v=2026-11-16_0912"></script>
+<script src="gomi.js?v=2026-11-16_0912"></script>
+<script src="sun.js?v=2026-11-16_0912"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-16 00:22";
+  const VERSION = "2026-11-16 09:12";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔（設定がないとき）
   function photoEvery() { const m = Number(cfg && cfg.photoMin); return m > 0 ? m * 60000 : PHOTO_EVERY; }
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
@@ -1284,6 +1284,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       topColor = measureTop(this); tintBar();
       if (!topColor && /^https?:/.test(url)) fetch(url, { mode: "cors" }).then((r) => r.blob()).then((b) => createImageBitmap(b)).then((bmp) => { const c = measureTop(bmp); if (c && shown === (key || url)) { topColor = c; tintBar(); } }).catch(() => {});
       wallInfo = info || null; $("credit").classList.toggle("has-info", !!wallInfo);
+      if (window.__resetWallTimer) window.__resetWallTimer();   // 切り替わった時点から、次の切り替えまでの時間を数え直す
       const cr = $("credit"); cr.textContent = "";
       if (wallInfo) {
         // 小さい文字で「名前 ・ 地名」（地名が分からなければグループ名）。押すとくわしい解説
@@ -1304,6 +1305,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const h = new Date().getHours(), kind = h >= 6 && h < 16 ? 0 : 1;
     if (shown !== "scenery" + kind) showPhoto(demoPhoto(kind), "", "scenery" + kind);
   }
+  // 次の1枚（解説と写真そのもの）を裏で先に読み込んでおく。押したときにすぐ切り替わるように
+  let wikiNextP = null, wikiNextMode = null;
+  function preloadImg(url) {
+    return new Promise((res) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = im.onerror = () => res(); setTimeout(res, 20000); im.src = url; });
+  }
+  function prepWiki(mode) {
+    wikiNextMode = mode;
+    wikiNextP = nextWiki(mode).then(async (w) => { if (w) await preloadImg(w.url); return w; }).catch(() => null);
+  }
   let wallAgain = false;
   async function nextWall() {
     if (wallBusy) { wallAgain = true; return; }   // 取りに行っている途中なら、終わってからもう一度（グループを変えた直後など）
@@ -1311,8 +1321,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
     wallBusy = true;
     try {
       if (isWiki(wallMode)) {
-        const w = await nextWiki(wallMode);
-        if (w) { $("wallNote").textContent = ""; showPhoto(w.url, w.caption, w.url, w); return; }
+        // 先に用意しておいた次の1枚があれば、それをすぐ出す
+        let w = null;
+        if (wikiNextP && wikiNextMode === wallMode) w = await wikiNextP;
+        wikiNextP = null;
+        if (!w) w = await nextWiki(wallMode);
+        if (w) { $("wallNote").textContent = ""; showPhoto(w.url, w.caption, w.url, w); prepWiki(wallMode); return; }
         $("wallNote").textContent = "写真を取得できませんでした（通信を確かめてください）。";
         if (shown) return;
       }
@@ -2456,7 +2470,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (!/^Q\d+$/.test(qid || "")) return "";
     const q = pref
       ? `SELECT DISTINCT ?l WHERE { wd:${qid} wdt:P131* ?p. ?p wdt:P31 wd:Q50337; rdfs:label ?l. FILTER(lang(?l)="ja") } LIMIT 4`
-      : `SELECT DISTINCT ?l WHERE { wd:${qid} wdt:P17 ?c. ?c rdfs:label ?l. FILTER(lang(?l)="ja") } LIMIT 4`;
+      : `SELECT DISTINCT ?l WHERE { wd:${qid} wdt:P17 ?c. ?c rdfs:label ?l. FILTER(lang(?l)="ja") FILTER NOT EXISTS { ?c wdt:P576 ?end } } LIMIT 4`;
     try {
       const d = await getJson("https://query.wikidata.org/sparql?format=json&query=" + encodeURIComponent(q), 8000);
       return d.results.bindings.map((b) => b.l.value).slice(0, 3).join("・");
