@@ -479,7 +479,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <ul class="chk-list" id="routines"><li class="empty">読み込み中…</li></ul>
         <h2 style="margin-top:22px">ときどきやること <small>前回から</small></h2>
         <ul class="since-list" id="sinceList"></ul>
-        <form class="rm-row" id="sinceForm" autocomplete="off"><input type="text" id="sinceText" placeholder="例：シーツ交換 14日ごと" enterkeyhint="done" aria-label="ときどきやること" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
+        <form class="rm-row" id="sinceForm" autocomplete="off"><input type="text" id="sinceText" placeholder="例：枕カバー 2日に1回／排水溝 月に1回" enterkeyhint="done" aria-label="ときどきやること" style="flex:1;min-width:0"><button class="btn" type="submit">追加</button></form>
       </div>
       <div class="col c3">
         <h2>メール <small id="mailCount"></small></h2>
@@ -727,14 +727,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-16_0912"></script>
-<script src="gomi.js?v=2026-11-16_0912"></script>
-<script src="sun.js?v=2026-11-16_0912"></script>
+<script src="remind-parse.js?v=2026-11-17_0003"></script>
+<script src="gomi.js?v=2026-11-17_0003"></script>
+<script src="sun.js?v=2026-11-17_0003"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-16 09:12";
+  const VERSION = "2026-11-17 00:03";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔（設定がないとき）
   function photoEvery() { const m = Number(cfg && cfg.photoMin); return m > 0 ? m * 60000 : PHOTO_EVERY; }
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
@@ -2104,12 +2104,24 @@ input::placeholder { color: var(--muted); opacity: .8; }
   function parseSince(text) {
     const s = window.normalizeJa ? window.normalizeJa(text) : text;
     let every = 0, t = s;
-    const m = s.match(/\s+(\d+)\s*(日|週間?|か月|ヶ月|カ月|ヵ月|月)?\s*(ごと|おき|に1回|に一回)?\s*$/);
-    if (m && m.index > 0) { const n = Number(m[1]); every = /週/.test(m[2] || "") ? n * 7 : /月/.test(m[2] || "") ? n * 30 : n; t = s.slice(0, m.index); }
-    else if (/毎月\s*$/.test(s)) { every = 30; t = s.replace(/\s*毎月\s*$/, ""); }
-    else if (/毎週\s*$/.test(s)) { every = 7; t = s.replace(/\s*毎週\s*$/, ""); }
+    const unit = (u) => /週/.test(u || "") ? 7 : /月/.test(u || "") ? 30 : /年/.test(u || "") ? 365 : 1;
+    // 「2日に1回」「1か月に一回」「2週間ごと」「3日おき」「月に1回」「週1」「毎月」「隔週」「10」（数字だけは日）
+    const m = s.match(/[\s、,]*(\d+)\s*(日|週間?|か月|ヶ月|カ月|ヵ月|月|年)?\s*(ごと|毎|おき|に\s*(1|一)\s*(回|度))?\s*$/);
+    if (m && m.index > 0 && (m[2] || m[3] || /\s/.test(s.slice(m.index - 1, m.index + 1)))) { every = Number(m[1]) * unit(m[2]) + (m[3] === "おき" && unit(m[2]) === 1 ? 1 : 0); t = s.slice(0, m.index); }
+    else if (/(毎月|月[にい]?\s*(1|一)\s*[回度]?)\s*$/.test(s)) { every = 30; t = s.replace(/[\s、,]*(毎月|月[にい]?\s*(1|一)\s*[回度]?)\s*$/, ""); }
+    else if (/(毎週|週[にい]?\s*(1|一)\s*[回度]?)\s*$/.test(s)) { every = 7; t = s.replace(/[\s、,]*(毎週|週[にい]?\s*(1|一)\s*[回度]?)\s*$/, ""); }
+    else if (/隔週\s*$/.test(s)) { every = 14; t = s.replace(/[\s、,]*隔週\s*$/, ""); }
+    else if (/(毎年|年[にい]?\s*(1|一)\s*[回度]?)\s*$/.test(s)) { every = 365; t = s.replace(/[\s、,]*(毎年|年[にい]?\s*(1|一)\s*[回度]?)\s*$/, ""); }
+    else if (/(1|一)日おき\s*$/.test(s)) { every = 2; t = s.replace(/[\s、,]*(1|一)日おき\s*$/, ""); }
     t = t.trim();
     return t ? { t, d: today, every } : null;
+  }
+  function everyLabel(n) {
+    if (n === 1) return "毎日";
+    if (n % 365 === 0) return n === 365 ? "年に1回" : n / 365 + "年に1回";
+    if (n % 30 === 0) return n === 30 ? "月に1回" : n / 30 + "か月に1回";
+    if (n % 7 === 0) return n === 7 ? "週に1回" : n / 7 + "週間に1回";
+    return n + "日に1回";
   }
   function renderSince() {
     const ul = $("sinceList"); ul.textContent = "";
@@ -2118,7 +2130,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     list.map((x, i) => ({ x, i, n: daysSince(x.d) })).sort((a, b) => (b.x.every ? b.n / b.x.every : 0) - (a.x.every ? a.n / a.x.every : 0)).forEach(({ x, i, n }) => {
       const due = x.every && n >= x.every;
       const li = el("li", due ? "due" : null), t = el("div", "t", x.t);
-      t.append(el("span", "ago", (n <= 0 ? "きょうやった" : n + "日前") + (x.every ? (due ? "・そろそろ" : "") + "（" + x.every + "日ごと）" : "")));
+      t.append(el("span", "ago", (n <= 0 ? "きょうやった" : n + "日前") + (x.every ? (due ? "・そろそろ" : "") + "（" + everyLabel(x.every) + "）" : "")));
       const done = el("button", "btn", "やった"); done.type = "button";
       done.addEventListener("click", () => { const l = sinceItems().slice(); l[i] = Object.assign({}, l[i], { d: today }); saveSince(l); });
       const del = el("button", "x", "消す"); del.type = "button"; del.setAttribute("aria-label", x.t + "を消す");
