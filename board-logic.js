@@ -1,4 +1,4 @@
-/* おうちボードの画面ロジック（天気の雨予報文・ときどきやること・カウントダウン・気象警報・夜間判定など）。
+/* おうちボードの画面ロジック（雨予報・ときどきやること・カウントダウン・気象警報・夜間判定・出発時刻逆算・宅配/請求抽出・家計ペース・ポモドーロ・クイック入力）。
    ブラウザでは window.BoardLogic、Node では module.exports で使う。 */
 (function (root) {
   const SNOW = new Set([71, 73, 75, 77, 85, 86]);
@@ -23,6 +23,7 @@
 
   const pad = (n) => String(n).padStart(2, "0");
   const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const hm = (d) => `${d.getHours()}:${pad(d.getMinutes())}`;
 
   // 夜に暗くする時間帯（pref = { from: "23:00", to: "06:00", off: false }）
   function isNight(d, pref) {
@@ -159,12 +160,140 @@
     return off ? { place, area: best.code, office: off } : null;
   }
 
+  // Google マップの所要時間（分）から「家を出るべき時刻」と残り時間を計算
+  function departInfo(evStart, travelMin, nowArg, bufferMin) {
+    const mins = Number(travelMin);
+    if (!evStart || !mins || mins <= 0) return null;
+    const s = new Date(evStart), now = nowArg ? new Date(nowArg) : new Date();
+    if (isNaN(s.getTime())) return null;
+    const buf = bufferMin == null ? 5 : Number(bufferMin);
+    const leaveAt = new Date(s.getTime() - (mins + buf) * 60000);
+    const minsLeft = Math.ceil((leaveAt.getTime() - now.getTime()) / 60000);
+    const urgent = minsLeft <= 15 && minsLeft > -30;
+    const leftText = minsLeft <= 0
+      ? "もう出発の時間"
+      : "あと" + (minsLeft >= 60 ? Math.floor(minsLeft / 60) + "時間" + (minsLeft % 60 ? (minsLeft % 60) + "分" : "") : minsLeft + "分");
+    return {
+      leaveAt,
+      leaveHM: hm(leaveAt),
+      minsLeft,
+      urgent,
+      text: `${hm(leaveAt)}出発（${leftText}）`,
+    };
+  }
+
+  // ポモドーロ状態遷移（25分作業 → 5分休憩、4回ごと15分長休憩）
+  function pomodoroNext(phase, doneSets) {
+    const n = Number(doneSets) || 0;
+    if (phase === "work") {
+      const nextDone = n + 1;
+      const isLong = nextDone % 4 === 0;
+      return { phase: isLong ? "longBreak" : "break", minutes: isLong ? 15 : 5, doneSets: nextDone, label: isLong ? "長い休憩" : "休憩" };
+    }
+    return { phase: "work", minutes: 25, doneSets: n, label: "集中" };
+  }
+
+  // 月間家計の進捗計算
+  function budgetSummary(total, budget, todayStr) {
+    const t = Math.max(0, Number(total) || 0);
+    const b = Math.max(0, Number(budget) || 0);
+    const d = new Date(todayStr + "T00:00:00");
+    const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const pacePct = Math.round((d.getDate() / daysInMonth) * 100);
+    if (!b) return { total: t, budget: 0, pct: 0, remain: 0, pacePct, over: false, warn: false };
+    const pct = Math.round((t / b) * 100);
+    return { total: t, budget: b, pct, remain: b - t, pacePct, over: t > b, warn: pct >= 85 };
+  }
+
+  // クイック入力の自動判別（「昼ごはん 850円」→支出、「牛乳を買う」→買い物、「金曜までにES提出」→タスク、「あした15時 ゼミ」→予定）
+  function parseQuickInput(text, nowArg, parseRemindFn, normalizeFn) {
+    const raw = String(text || "").trim();
+    if (!raw) return null;
+    const norm = normalizeFn ? normalizeFn(raw) : raw;
+    // 1. 支出パターン（例：「昼ごはん 850円」「スーパー 1,280円」「コーヒー ¥350」）
+    const expM = norm.match(/(?:[¥￥]\s*([\d,]+)|([\d,]+)\s*円)/);
+    if (expM && !/時|分|日|週|月/.test(norm.replace(expM[0], "").slice(-3))) {
+      const amount = Number((expM[1] || expM[2]).replace(/,/g, ""));
+      if (amount > 0 && amount < 10000000) {
+        const memo = norm.replace(expM[0], "").replace(/[\s、,]+/g, " ").trim() || "支出";
+        const cat = /スーパー|コンビニ|昼|夜|朝|ランチ|食|弁当|カフェ|コーヒー|ラーメン|パン|牛丼/.test(memo) ? "食費"
+          : /電車|バス|Suica|PASMO|交通|定期|タクシー|新幹線/.test(memo) ? "交通費"
+          : /薬|洗剤|ティッシュ|トイレット|日用|100均|ダイソー|歯ブラシ/.test(memo) ? "日用品"
+          : /本|書籍|文具|研究|論文|コピー/.test(memo) ? "研究・書籍" : "その他";
+        return { kind: "expense", amount, category: cat, memo };
+      }
+    }
+    // 2. 締切つきタスク（「〜までに」「締切」）
+    if (/までに|締切|締め切り|提出|タスク/.test(norm)) {
+      const r = parseRemindFn ? parseRemindFn(norm.replace(/までに/g, "に"), nowArg) : null;
+      const due = r && r.found && r.start ? ymd(r.start) : "";
+      const title = (r && r.title ? r.title : norm).replace(/^(タスク[\s:：]+)|([をに]?タスク(に)?追加(して)?)$|締切|締め切り/g, "").trim() || raw;
+      return { kind: "task", title, due };
+    }
+    // 3. 日時が含まれる場合は予定またはリマインダー
+    if (parseRemindFn) {
+      const r = parseRemindFn(norm, nowArg);
+      if (r && r.found && r.title) {
+        if (/リマインド|リマインダー|通知|教えて|知らせて|覚えて/.test(norm)) {
+          return { kind: "remind", title: r.title, start: r.start, timeGiven: r.timeGiven };
+        }
+        return { kind: "event", title: r.title, start: r.start, allDay: !r.timeGiven, date: ymd(r.start) };
+      }
+    }
+    // 4. それ以外はタスク（買い物キーワードがあれば買い物向けフラグ）
+    const shopping = /買う|買い出し|スーパー|牛乳|卵|パン|米|洗剤|ティッシュ|電池|肉|野菜|豆腐|納豆/.test(norm);
+    return { kind: "task", title: raw.replace(/(を買う|買って|を買い物リストに(追加|入れて))$/, "").trim() || raw, due: "", shopping };
+  }
+
+  // Gmail メッセージ配列（{ subject, from, snippet, date }）から宅配便とカード引き落としを安全に抽出（外部送信なし）
+  function extractLifeFromMail(messages) {
+    const deliveries = [], bills = [], seenDel = new Set(), seenBill = new Set();
+    (messages || []).forEach((m) => {
+      const subj = String(m.subject || ""), from = String(m.from || ""), body = String(m.snippet || "");
+      const all = subj + " " + from + " " + body;
+      // 宅配便
+      if (/お届け予定|配達予定|本日お届け|発送のお知らせ|配送状況|荷物のお届け|配達完了/.test(all) && !/配達完了|お届け済み/.test(subj)) {
+        const carrier = /ヤマト|クロネコ|kuronekoyamato/i.test(all) ? "ヤマト運輸"
+          : /佐川|sagawa/i.test(all) ? "佐川急便"
+          : /日本郵便|ゆうパック|post\.japanpost/i.test(all) ? "日本郵便"
+          : /Amazon|アマゾン/i.test(all) ? "Amazon" : "宅配便";
+        const winM = all.match(/(\d{1,2})\s*[:時]\s*(?:00)?\s*[〜~\-ー]\s*(\d{1,2})\s*[:時]|午前中/);
+        const win = winM ? (winM[0] === "午前中" ? "午前中" : `${winM[1]}-${winM[2]}時`) : "";
+        const key = carrier + "|" + subj.slice(0, 20);
+        if (!seenDel.has(key)) {
+          seenDel.add(key);
+          deliveries.push({ carrier, window: win, subject: subj.slice(0, 48), at: m.date || "" });
+        }
+      }
+      // カード引き落とし・請求確定
+      if (/お支払予定|ご請求金額|引き落とし|引落|ご利用明細|請求額確定/.test(all)) {
+        const amtM = all.match(/([\d,]{3,9})\s*円|[¥￥]\s*([\d,]{3,9})/);
+        const dtM = all.match(/(\d{1,2})\s*[月\/]\s*(\d{1,2})\s*日?/);
+        const amount = amtM ? Number((amtM[1] || amtM[2]).replace(/,/g, "")) : 0;
+        const card = /楽天カード|rakuten/i.test(all) ? "楽天カード"
+          : /三井住友|Vpass|smbc/i.test(all) ? "三井住友カード"
+          : /JCB/i.test(all) ? "JCBカード"
+          : /エポス|epos/i.test(all) ? "エポスカード"
+          : /PayPayカード/i.test(all) ? "PayPayカード"
+          : from.replace(/\s*<.*>$/, "").replace(/^"|"$/g, "").slice(0, 18) || "請求";
+        const payDate = dtM ? `${Number(dtM[1])}/${Number(dtM[2])}` : "";
+        const key = card + "|" + amount + "|" + payDate;
+        if ((amount > 0 || payDate) && !seenBill.has(key)) {
+          seenBill.add(key);
+          bills.push({ card, amount, payDate, subject: subj.slice(0, 48), at: m.date || "" });
+        }
+      }
+    });
+    return { deliveries: deliveries.slice(0, 5), bills: bills.slice(0, 5) };
+  }
+
   const api = {
     WARN, PREFS,
     isNight, nightPixelShift,
     rainLine, baseComment,
     daysDiff, parseSince, everyLabel, parseCd,
     warnFrom, areaFrom,
+    departInfo, pomodoroNext, budgetSummary, parseQuickInput, extractLifeFromMail,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.BoardLogic = api;

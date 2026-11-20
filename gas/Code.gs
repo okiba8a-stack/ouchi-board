@@ -15,7 +15,8 @@ const LAT = Number(PROPS_.getProperty('LAT')) || 35.6713;
 const LON = Number(PROPS_.getProperty('LON')) || 139.3951;
 const TZ = 'Asia/Tokyo';
 const NEWS_RSS = 'https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja';
-// アシスタントに Claude を使うときのモデル（スクリプトプロパティ ANTHROPIC_API_KEY を入れたときだけ使う）
+// アシスタントやドライブ画像読み取りに使う AI（スクリプトプロパティ GEMINI_API_KEY または ANTHROPIC_API_KEY を入れたときだけ使う）
+const GEMINI_MODEL = PROPS_.getProperty('GEMINI_MODEL') || 'gemini-2.5-flash';
 const CLAUDE_MODEL = 'claude-opus-5-5';
 
 /* ---------- 初回設定 ---------- */
@@ -75,7 +76,7 @@ function getSheet_() {
 function flag_(v) { return v === true || v === '1' || v === 1; }
 
 function dispatchAction_(p, isPost) {
-  if (/^(check|remind|mark|edit|delete|event|say|routines)$/.test(p.action)) bust_();
+  if (/^(check|remind|mark|edit|delete|event|say|routines|pomoLog|expenseAdd|budgetSet|taskAdd|taskSet|taskDel|taskDue|taskListAdd)$/.test(p.action)) bust_();
   switch (p.action) {
     case 'board': return board_(p.date);
     case 'check': return check_(p.date, p.id, flag_(p.on));
@@ -86,6 +87,16 @@ function dispatchAction_(p, isPost) {
     case 'memoAdd': return memoAdd_(p.text);
     case 'memoSet': return memoSet_(p.id, flag_(p.on));
     case 'memoDel': return memoDel_(p.id);
+    case 'taskAdd': return taskAdd_(p.listId, p.text, p.due);
+    case 'taskSet': return taskSet_(p.listId, p.id, flag_(p.on));
+    case 'taskDel': return taskDel_(p.listId, p.id);
+    case 'taskDue': return taskDue_(p.listId, p.id, p.due);
+    case 'taskListAdd': return taskListAdd_(p.title);
+    case 'pomoLog': return pomoLog_(p.date, p.task, Number(p.minutes || 25));
+    case 'expenseAdd': return expenseAdd_(Number(p.amount), p.category, p.memo);
+    case 'budgetSet': return budgetSet_(Number(p.budget));
+    case 'weeklyDoc': return createWeeklyDoc();
+    case 'processInbox': return processInboxFolder();
     case 'mailRead': return mailRead_(p.id, flag_(p.all));
     case 'mailPrefs': return mailPrefsSet_(flag_(p.important), p.from, p.days);
     case 'photoDelete': return photoDelete_(p.id);
@@ -150,13 +161,17 @@ function board_(dateStr) {
   const weather = safe_(getWeather_);
   const routines = getRoutines_();
   const cs = safe_(() => cached_('chk:' + date, 90, () => getChecksAndStreaks_(date, routines))) || { checks: {}, streaks: {} };
+  const events = safe_(() => cached_('ev:' + date, 90, () => getEvents_(date)));
+  const taskLists = safe_(getTasksAll_) || [];
+  const memos = taskLists.length ? taskLists[0].items : (safe_(getMemos_) || []);
   return {
     ok: true,
     date: date,
     place: PLACE,
     lat: LAT,
     lon: LON,
-    events: safe_(() => cached_('ev:' + date, 90, () => getEvents_(date))),
+    events: events,
+    travel: safe_(() => getTravelForEvents_(events, date)) || {},
     reminders: safe_(() => cached_('rm:' + date, 90, () => getReminders_(date))) || [],
     weather: weather,
     comment: weather ? comment_(weather) : '',
@@ -165,10 +180,22 @@ function board_(dateStr) {
     checks: cs.checks || {},
     streaks: cs.streaks || {},
     photos: safe_(getPhotoIds_) || [],
-    memos: safe_(getMemos_) || [],
+    memos: memos,
+    taskLists: taskLists,
     mail: safe_(getMail_),
     mailBrief: safe_(getMailBrief_),
-    ai: !!PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY'),
+    life: safe_(getLifeMail_) || { deliveries: [], bills: [] },
+    weekly: safe_(() => cached_('wk:' + date, 90, () => getWeeklyReview_(date, routines))) || null,
+    expenses: safe_(() => cached_('exp:' + date.slice(0, 7), 90, () => getExpenses_(date))) || null,
+    inbox: safe_(getInboxState_) || null,
+    weeklyDoc: safe_(getLatestWeeklyDoc_) || null,
+    google: {
+      tasks: useTasks_(),
+      formUrl: PROPS_.getProperty('EXPENSE_FORM_URL') || '',
+      gemini: !!PROPS_.getProperty('GEMINI_API_KEY'),
+      inboxFolderUrl: PROPS_.getProperty('INBOX_FOLDER_URL') || '',
+    },
+    ai: !!(PROPS_.getProperty('GEMINI_API_KEY') || PROPS_.getProperty('ANTHROPIC_API_KEY')),
     at: new Date().toISOString(),
   };
 }
@@ -815,9 +842,11 @@ function parseJst_(text) {
 function say_(text) {
   text = String(text || '').trim().slice(0, 500);
   if (!text) throw new Error('内容が空です');
-  const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  const geminiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  const claudeKey = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
   let out = null;
-  if (key) { try { out = sayClaude_(text, key); } catch (e) { console.error(e); } }
+  if (geminiKey) { try { out = sayGemini_(text, geminiKey); } catch (e) { console.error('sayGemini_:', e); } }
+  if (!out && claudeKey) { try { out = sayClaude_(text, claudeKey); } catch (e) { console.error('sayClaude_:', e); } }
   if (!out) out = sayRules_(text);
   out.ok = true;
   return out;
@@ -933,6 +962,511 @@ function sayClaude_(text, key) {
     const title = String(a.title || '').trim();
     if (a.type === 'timer' && a.seconds > 0) result.timer = { seconds: a.seconds, label: title };
     else if (a.type === 'memo' && title) { memoAdd_(title); result.changed = true; }
+    else if ((a.type === 'reminder' || a.type === 'event') && title && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(a.start || '')) {
+      const iso = a.start.slice(0, 16) + ':00+09:00';
+      if (a.type === 'reminder') remind_(title, iso, 30); else event_(title, iso, !!a.all_day, a.start.slice(0, 10));
+      result.changed = true;
+    }
+  });
+  return result;
+}
+
+/* ---------- Google アプリ連携パック（Maps / Tasks複数リスト / Gmail生活 / フォーム家計簿 / ポモドーロ / ドライブ×Gemini / ドキュメント週報） ---------- */
+
+/** Google 連携の追加セットアップ（一度実行すると、3秒家計簿フォーム・AI投入フォルダ・週報フォルダを自動作成する） */
+function setupGoogleApps() {
+  setup();
+  const props = PropertiesService.getScriptProperties();
+  const ss = getSheet_();
+  expenseSheet_();
+  focusSheet_();
+  // 1. 3秒家計簿 Google フォーム
+  let formUrl = props.getProperty('EXPENSE_FORM_URL');
+  if (!formUrl) {
+    const form = FormApp.create('おうちボード 3秒家計簿');
+    form.setDescription('金額とカテゴリを送ると、おうちボードの今月の支出に自動反映されます。');
+    form.addTextItem().setTitle('金額（円）').setRequired(true);
+    form.addMultipleChoiceItem().setTitle('カテゴリ').setChoiceValues(['食費', '日用品', '交通費', '研究・書籍', '交際・趣味', 'その他']).setRequired(true);
+    form.addTextItem().setTitle('メモ（任意）').setRequired(false);
+    form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+    formUrl = form.getPublishedUrl();
+    props.setProperty('EXPENSE_FORM_URL', formUrl);
+    props.setProperty('EXPENSE_FORM_ID', form.getId());
+  }
+  // 2. ドライブ投入フォルダ（レシート・プリント・ごみ表の画像を入れる用）
+  const inbox = getOrCreateFolder_('INBOX_FOLDER_ID', 'おうちボード 投入');
+  props.setProperty('INBOX_FOLDER_URL', inbox.getUrl());
+  // 3. 週報フォルダ（Google ドキュメント保存用）
+  const wkDir = getOrCreateFolder_('WEEKLY_FOLDER_ID', 'おうちボード 週報');
+  // 4. Maps 権限チェック
+  try { Maps.newDirectionFinder().setOrigin(LAT + ',' + LON).setDestination('東京駅').setMode(Maps.DirectionFinder.Mode.TRANSIT).getDirections(); } catch (e) {}
+  Logger.log('3秒家計簿フォーム（iPhone のホーム画面に追加すると便利）: ' + formUrl);
+  Logger.log('ドライブ投入フォルダ（画像/PDFを入れる）: ' + inbox.getUrl());
+  Logger.log('週報ドキュメントフォルダ: ' + wkDir.getUrl());
+  return { ok: true, formUrl: formUrl, inboxFolderUrl: inbox.getUrl(), weeklyFolderUrl: wkDir.getUrl() };
+}
+
+function getOrCreateFolder_(propKey, folderName) {
+  const id = PROPS_.getProperty(propKey);
+  if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) {} }
+  const it = DriveApp.getFoldersByName(folderName);
+  const folder = it.hasNext() ? it.next() : DriveApp.createFolder(folderName);
+  PROPS_.setProperty(propKey, folder.getId());
+  return folder;
+}
+
+/* --- Google マップ：予定の場所までの所要時間（1日1,000回無料・6時間キャッシュ） --- */
+function getTravel_(dest) {
+  dest = String(dest || '').trim();
+  if (!dest || dest.length < 2 || /^(オンライン|Zoom|Teams|Meet|自宅|家|なし)$/i.test(dest)) return null;
+  const cache = CacheService.getScriptCache();
+  const ck = 'trv:' + LAT + ',' + LON + ':' + dest.slice(0, 60);
+  const hit = cache.get(ck);
+  if (hit) return JSON.parse(hit);
+  let out = null;
+  try {
+    let res = Maps.newDirectionFinder()
+      .setOrigin(LAT + ',' + LON)
+      .setDestination(dest)
+      .setMode(Maps.DirectionFinder.Mode.TRANSIT)
+      .setLanguage('ja')
+      .getDirections();
+    let mode = 'transit';
+    if (!res || res.status !== 'OK' || !res.routes || !res.routes.length) {
+      res = Maps.newDirectionFinder()
+        .setOrigin(LAT + ',' + LON)
+        .setDestination(dest)
+        .setMode(Maps.DirectionFinder.Mode.WALKING)
+        .setLanguage('ja')
+        .getDirections();
+      mode = 'walk';
+    }
+    if (res && res.status === 'OK' && res.routes && res.routes[0] && res.routes[0].legs && res.routes[0].legs[0]) {
+      const leg = res.routes[0].legs[0];
+      out = { min: Math.max(1, Math.round(leg.duration.value / 60)), text: leg.duration.text, dist: leg.distance ? leg.distance.text : '', mode: mode };
+    }
+  } catch (e) { console.error('getTravel_:', e); }
+  try { cache.put(ck, JSON.stringify(out), 6 * 3600); } catch (e) {}
+  return out;
+}
+
+function getTravelForEvents_(events, date) {
+  if (!Array.isArray(events) || !events.length) return {};
+  const now = Date.now(), limit = now + 36 * 3600000;
+  const out = {};
+  let count = 0;
+  for (let i = 0; i < events.length && count < 3; i++) {
+    const ev = events[i];
+    if (!ev || ev.allDay || !ev.location) continue;
+    const t = new Date(ev.start).getTime();
+    if (isNaN(t) || t < now - 15 * 60000 || t > limit) continue;
+    if (ev.location in out) continue;
+    const tr = getTravel_(ev.location);
+    if (tr) { out[ev.location] = tr; count++; }
+  }
+  return out;
+}
+
+/* --- Google ToDo（Tasks API）：複数リスト＋締切日（due）対応 --- */
+function getTasksAll_() {
+  if (!useTasks_()) {
+    return [{ id: 'sheet', title: TASKLIST_NAME, items: getMemos_() }];
+  }
+  const mainId = taskListId_();
+  const lists = (Tasks.Tasklists.list({ maxResults: 20 }).items || []).slice(0, 6);
+  // メインの「おうちボード」を先頭に並べる
+  lists.sort((a, b) => (a.id === mainId ? -1 : b.id === mainId ? 1 : 0));
+  return lists.map((l) => {
+    const items = (Tasks.Tasks.list(l.id, { showCompleted: true, showHidden: false, maxResults: 100 }).items || [])
+      .filter((t) => t.title && !t.deleted)
+      .sort((a, b) => String(a.position).localeCompare(String(b.position)))
+      .map((t) => ({
+        id: t.id,
+        text: t.title,
+        done: t.status === 'completed',
+        due: t.due ? String(t.due).slice(0, 10) : '',
+        notes: t.notes ? String(t.notes).slice(0, 200) : '',
+      }));
+    return { id: l.id, title: l.title, items: items };
+  });
+}
+
+function resolveListId_(listId) {
+  if (!useTasks_()) return 'sheet';
+  return listId && listId !== 'sheet' ? String(listId) : taskListId_();
+}
+
+function taskAdd_(listId, text, due) {
+  text = String(text || '').trim().slice(0, 200);
+  if (!text) throw new Error('内容が空です');
+  if (!useTasks_()) {
+    const r = memoAdd_(text);
+    return { ok: true, id: r.id, taskLists: getTasksAll_(), memos: r.memos };
+  }
+  const lid = resolveListId_(listId);
+  const body = { title: text };
+  if (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) body.due = due + 'T00:00:00.000Z';
+  const t = Tasks.Tasks.insert(body, lid);
+  const all = getTasksAll_();
+  return { ok: true, id: t.id, taskLists: all, memos: all.length ? all[0].items : [] };
+}
+
+function taskSet_(listId, id, on) {
+  if (!useTasks_()) return memoSet_(id, on);
+  Tasks.Tasks.patch(on ? { status: 'completed' } : { status: 'needsAction', completed: null }, resolveListId_(listId), id);
+  return { ok: true };
+}
+
+function taskDel_(listId, id) {
+  if (!useTasks_()) return memoDel_(id);
+  Tasks.Tasks.remove(resolveListId_(listId), id);
+  return { ok: true };
+}
+
+function taskDue_(listId, id, due) {
+  if (!useTasks_()) return { ok: true };
+  const patch = due && /^\d{4}-\d{2}-\d{2}$/.test(due) ? { due: due + 'T00:00:00.000Z' } : { due: null };
+  Tasks.Tasks.patch(patch, resolveListId_(listId), id);
+  return { ok: true, taskLists: getTasksAll_() };
+}
+
+function taskListAdd_(title) {
+  title = String(title || '').trim().slice(0, 40);
+  if (!title) throw new Error('リスト名が空です');
+  if (!useTasks_()) throw new Error('複数リストには Tasks API の有効化が必要です');
+  const created = Tasks.Tasklists.insert({ title: title });
+  return { ok: true, id: created.id, taskLists: getTasksAll_() };
+}
+
+/* --- Gmail 生活インボックス（宅配便・カード引き落としを外部送信なしでルール抽出・15分キャッシュ） --- */
+function getLifeMail_() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('lifeMail');
+  if (hit) return JSON.parse(hit);
+  const deliveries = [], bills = [], seenDel = {}, seenBill = {};
+  const delThs = GmailApp.search('(Amazon OR ヤマト OR 佐川 OR ゆうパック OR お届け予定 OR 配達予定 OR 本日お届け) newer_than:2d', 0, 10);
+  delThs.forEach((th) => {
+    const m = th.getMessages().pop();
+    const subj = String(th.getFirstMessageSubject() || '');
+    if (/配達完了|お届け済み/.test(subj)) return;
+    const from = String(m.getFrom() || '');
+    const snippet = String(m.getPlainBody() || '').slice(0, 600);
+    const all = subj + ' ' + from + ' ' + snippet;
+    if (!/お届け予定|配達予定|本日お届け|発送のお知らせ|配送状況|荷物のお届け/.test(all)) return;
+    const carrier = /ヤマト|クロネコ|kuronekoyamato/i.test(all) ? 'ヤマト運輸'
+      : /佐川|sagawa/i.test(all) ? '佐川急便'
+      : /日本郵便|ゆうパック|post\.japanpost/i.test(all) ? '日本郵便'
+      : /Amazon|アマゾン/i.test(all) ? 'Amazon' : '宅配便';
+    const winM = all.match(/(\d{1,2})\s*[:時]\s*(?:00)?\s*[〜~\-ー]\s*(\d{1,2})\s*[:時]|午前中/);
+    const win = winM ? (winM[0] === '午前中' ? '午前中' : winM[1] + '-' + winM[2] + '時') : '';
+    const key = carrier + '|' + subj.slice(0, 20);
+    if (!seenDel[key]) {
+      seenDel[key] = 1;
+      deliveries.push({ id: th.getId(), carrier: carrier, window: win, subject: subj.slice(0, 48), at: m.getDate().toISOString() });
+    }
+  });
+  const billThs = GmailApp.search('(お支払予定 OR ご請求金額 OR 引き落とし OR 請求額確定) newer_than:25d', 0, 10);
+  billThs.forEach((th) => {
+    const m = th.getMessages().pop();
+    const subj = String(th.getFirstMessageSubject() || '');
+    const from = String(m.getFrom() || '');
+    const snippet = String(m.getPlainBody() || '').slice(0, 800);
+    const all = subj + ' ' + from + ' ' + snippet;
+    const amtM = all.match(/([\d,]{3,9})\s*円|[¥￥]\s*([\d,]{3,9})/);
+    const dtM = all.match(/(\d{1,2})\s*[月\/]\s*(\d{1,2})\s*日?/);
+    const amount = amtM ? Number((amtM[1] || amtM[2]).replace(/,/g, '')) : 0;
+    const card = /楽天カード|rakuten/i.test(all) ? '楽天カード'
+      : /三井住友|Vpass|smbc/i.test(all) ? '三井住友カード'
+      : /JCB/i.test(all) ? 'JCBカード'
+      : /エポス|epos/i.test(all) ? 'エポスカード'
+      : /PayPayカード/i.test(all) ? 'PayPayカード'
+      : from.replace(/\s*<.*>$/, '').replace(/^"|"$/g, '').slice(0, 18) || '請求';
+    const payDate = dtM ? Number(dtM[1]) + '/' + Number(dtM[2]) : '';
+    const key = card + '|' + amount + '|' + payDate;
+    if ((amount > 0 || payDate) && !seenBill[key]) {
+      seenBill[key] = 1;
+      bills.push({ id: th.getId(), card: card, amount: amount, payDate: payDate, subject: subj.slice(0, 48), at: m.getDate().toISOString() });
+    }
+  });
+  const out = { deliveries: deliveries.slice(0, 5), bills: bills.slice(0, 5) };
+  cache.put('lifeMail', JSON.stringify(out), 15 * 60);
+  return out;
+}
+
+/* --- ポモドーロ作業ログ ＋ 週間ふり返り --- */
+function focusSheet_() {
+  const ss = getSheet_();
+  let sh = ss.getSheetByName('focus');
+  if (!sh) {
+    sh = ss.insertSheet('focus');
+    sh.getRange(1, 1, 1, 4).setValues([['日付', '記録時刻', 'タスク', '分数']]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function pomoLog_(date, task, minutes) {
+  const d = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const mins = Math.max(1, Math.min(180, Number(minutes) || 25));
+  const label = String(task || '集中').trim().slice(0, 80);
+  focusSheet_().appendRow(["'" + d, new Date(), label, mins]);
+  return { ok: true, weekly: getWeeklyReview_(d, getRoutines_()) };
+}
+
+function getWeeklyReview_(date, routines) {
+  const rts = (routines || getRoutines_()).filter((r) => r.active !== false);
+  const checkRows = getSheet_().getSheetByName('checks').getDataRange().getValues().slice(1);
+  const doneByDay = {};
+  checkRows.forEach((r) => {
+    if (!(r[2] === true || String(r[2]).toUpperCase() === 'TRUE')) return;
+    const d = normCheckDate_(r[0]);
+    if (!d) return;
+    (doneByDay[d] = doneByDay[d] || {})[String(r[1])] = true;
+  });
+  const base = new Date(date + 'T12:00:00+09:00');
+  const days = [];
+  const daySet = {};
+  for (let i = 6; i >= 0; i--) {
+    const t = new Date(base.getTime() - i * 86400000);
+    const dk = Utilities.formatDate(t, TZ, 'yyyy-MM-dd');
+    const dow = Number(Utilities.formatDate(t, TZ, 'u')) % 7;
+    daySet[dk] = 1;
+    const activeDay = rts.filter((r) => !r.days.length || r.days.indexOf(dow) >= 0);
+    const hit = doneByDay[dk] || {};
+    const done = activeDay.filter((r) => hit[r.id]).length;
+    days.push({ date: dk, dow: dow, done: done, total: activeDay.length });
+  }
+  // 過去7日間のポモドーロ集計
+  const fRows = focusSheet_().getDataRange().getValues().slice(1);
+  let weekMin = 0, weekSets = 0, todayMin = 0, todaySets = 0;
+  fRows.forEach((r) => {
+    const dk = normCheckDate_(r[0]);
+    const mins = Number(r[3]) || 0;
+    if (!daySet[dk] || mins <= 0) return;
+    weekMin += mins; weekSets++;
+    if (dk === date) { todayMin += mins; todaySets++; }
+  });
+  return { days: days, weekMin: weekMin, weekSets: weekSets, todayMin: todayMin, todaySets: todaySets };
+}
+
+/* --- 3秒家計簿（Google フォーム連動 ＋ ボード直接入力） --- */
+function expenseSheet_() {
+  const ss = getSheet_();
+  let sh = ss.getSheetByName('expenses');
+  if (!sh) {
+    sh = ss.insertSheet('expenses');
+    sh.getRange(1, 1, 1, 4).setValues([['日時', '金額', 'カテゴリ', 'メモ']]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function getExpenses_(date) {
+  const ym = String(date || Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd')).slice(0, 7);
+  const ss = getSheet_();
+  const rows = [];
+  // 1. expenses シート
+  const sh = ss.getSheetByName('expenses');
+  if (sh) {
+    sh.getDataRange().getValues().slice(1).forEach((r) => {
+      if (!r[0] || !r[1]) return;
+      const dt = r[0] instanceof Date ? r[0] : new Date(String(r[0]).replace(/^'/, ''));
+      if (isNaN(dt.getTime())) return;
+      rows.push({ at: dt, amount: Number(String(r[1]).replace(/[^\d.-]/g, '')) || 0, category: String(r[2] || 'その他'), memo: String(r[3] || '') });
+    });
+  }
+  // 2. Google フォーム回答シート（「フォームの回答」で始まるシートがあれば自動で合算）
+  ss.getSheets().forEach((s) => {
+    if (!/フォームの回答|Form Responses/i.test(s.getName())) return;
+    s.getDataRange().getValues().slice(1).forEach((r) => {
+      if (!r[0] || !r[1]) return;
+      const dt = r[0] instanceof Date ? r[0] : new Date(r[0]);
+      if (isNaN(dt.getTime())) return;
+      rows.push({ at: dt, amount: Number(String(r[1]).replace(/[^\d.-]/g, '')) || 0, category: String(r[2] || 'その他'), memo: String(r[3] || '') });
+    });
+  });
+  const monthRows = rows.filter((x) => x.amount > 0 && Utilities.formatDate(x.at, TZ, 'yyyy-MM') === ym)
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+  const byCat = {};
+  let total = 0;
+  monthRows.forEach((x) => { total += x.amount; byCat[x.category] = (byCat[x.category] || 0) + x.amount; });
+  return {
+    ym: ym,
+    total: total,
+    budget: Number(PROPS_.getProperty('BUDGET_MONTH')) || 0,
+    byCat: byCat,
+    recent: monthRows.slice(0, 6).map((x) => ({ at: x.at.toISOString(), amount: x.amount, category: x.category, memo: x.memo.slice(0, 40) })),
+  };
+}
+
+function expenseAdd_(amount, category, memo) {
+  amount = Math.round(Number(amount) || 0);
+  if (amount <= 0 || amount > 10000000) throw new Error('金額が正しくありません');
+  const cat = String(category || 'その他').trim().slice(0, 20) || 'その他';
+  const m = String(memo || '').trim().slice(0, 80);
+  expenseSheet_().appendRow([new Date(), amount, cat, m]);
+  return { ok: true, expenses: getExpenses_(Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd')) };
+}
+
+function budgetSet_(budget) {
+  const b = Math.max(0, Math.min(10000000, Math.round(Number(budget) || 0)));
+  PROPS_.setProperty('BUDGET_MONTH', String(b));
+  return { ok: true, expenses: getExpenses_(Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd')) };
+}
+
+/* --- Google ドライブ × Gemini マルチモーダル自動読み取り（画像/PDF → 家計・予定・タスク・ごみ規則） --- */
+function getInboxState_() {
+  let log = [];
+  try { log = JSON.parse(PROPS_.getProperty('INBOX_LOG') || '[]'); } catch (e) {}
+  return { log: log.slice(0, 6), gomiDraft: PROPS_.getProperty('INBOX_GOMI_DRAFT') || '' };
+}
+
+/** 定期トリガー（10〜15分おき）またはボードから実行。投入フォルダの画像/PDFを Gemini で読み取って自動登録する */
+function processInboxFolder() {
+  const apiKey = PROPS_.getProperty('GEMINI_API_KEY');
+  if (!apiKey) return { ok: false, error: 'GEMINI_API_KEY が未設定です' };
+  const folder = getOrCreateFolder_('INBOX_FOLDER_ID', 'おうちボード 投入');
+  let doneDir;
+  const sub = folder.getFoldersByName('処理済み');
+  doneDir = sub.hasNext() ? sub.next() : folder.createFolder('処理済み');
+  const fi = folder.getFiles();
+  const results = [];
+  let processed = 0;
+  while (fi.hasNext() && processed < 3) {
+    const file = fi.next();
+    const mime = String(file.getMimeType() || '');
+    if (!/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(mime)) continue;
+    if (file.getSize() > 8 * 1024 * 1024) continue;
+    try {
+      const parsed = geminiAnalyzeFile_(file, mime, apiKey);
+      let summary = file.getName();
+      if (parsed.kind === 'receipt' && parsed.amount > 0) {
+        expenseAdd_(parsed.amount, parsed.category || '食費', parsed.memo || file.getName());
+        summary = '家計記帳：' + (parsed.memo || 'レシート') + ' ' + parsed.amount + '円';
+      } else if (parsed.kind === 'event' && parsed.title && parsed.start) {
+        const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(parsed.start) ? parsed.start.slice(0, 16) + ':00+09:00' : '';
+        if (iso) {
+          event_(parsed.title, iso, !!parsed.all_day, parsed.start.slice(0, 10));
+          summary = '予定登録：' + parsed.title + '（' + parsed.start.slice(0, 10) + '）';
+        }
+      } else if (parsed.kind === 'gomi' && parsed.gomi_rules) {
+        PROPS_.setProperty('INBOX_GOMI_DRAFT', String(parsed.gomi_rules).slice(0, 1500));
+        summary = 'ごみ規則案を作成（ツールの「ごみの日」に貼り付け可能）';
+      } else if (parsed.kind === 'shopping' && Array.isArray(parsed.items) && parsed.items.length) {
+        parsed.items.slice(0, 10).forEach((it) => { if (it) taskAdd_(null, String(it), ''); });
+        summary = 'ToDo追加：' + parsed.items.slice(0, 5).join('・');
+      } else if (parsed.title) {
+        taskAdd_(null, parsed.title, parsed.due || '');
+        summary = 'タスク登録：' + parsed.title;
+      }
+      file.moveTo(doneDir);
+      results.push({ at: new Date().toISOString(), file: file.getName(), summary: summary });
+      processed++;
+    } catch (e) {
+      console.error('processInboxFolder:', file.getName(), e);
+      results.push({ at: new Date().toISOString(), file: file.getName(), summary: '読取失敗：' + String(e.message || e).slice(0, 60) });
+    }
+  }
+  if (results.length) {
+    let prev = [];
+    try { prev = JSON.parse(PROPS_.getProperty('INBOX_LOG') || '[]'); } catch (e) {}
+    PROPS_.setProperty('INBOX_LOG', JSON.stringify(results.concat(prev).slice(0, 12)));
+    bust_();
+  }
+  return { ok: true, processed: processed, inbox: getInboxState_() };
+}
+
+function geminiAnalyzeFile_(file, mime, apiKey) {
+  const b64 = Utilities.base64Encode(file.getBlob().getBytes());
+  const today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const prompt = '今日は ' + today + ' です。この画像またはPDFを読み取り、次のJSON形式だけで返してください。\n' +
+    '{"kind":"receipt|event|gomi|shopping|task","amount":0,"category":"食費|日用品|交通費|研究・書籍|交際・趣味|その他","memo":"","title":"","start":"YYYY-MM-DDTHH:mm","all_day":false,"due":"YYYY-MM-DD","items":[],"gomi_rules":""}\n' +
+    '- レシートなら kind="receipt"、合計金額を amount、店名や品目を memo に。\n' +
+    '- 予定案内やプリントなら kind="event"、title と start（日時）を。\n' +
+    '- 自治体のごみカレンダーなら kind="gomi"、gomi_rules に「燃えるごみ 月 木 8:30まで\\n資源ごみ 第2・第4 金」の形式で1行1ルール。\n' +
+    '- 買い物リストなら kind="shopping"、items 配列に品目名。\n' +
+    '- それ以外は kind="task"、title と due（あれば）。';
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(GEMINI_MODEL) + ':generateContent?key=' + encodeURIComponent(apiKey);
+  const res = UrlFetchApp.fetch(url, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: mime, data: b64 } }] }],
+      generationConfig: { responseMimeType: 'application/json' },
+    }),
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Gemini API ' + res.getResponseCode());
+  const j = JSON.parse(res.getContentText());
+  const txt = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts && j.candidates[0].content.parts[0].text;
+  return JSON.parse(txt || '{}');
+}
+
+/* --- Google ドキュメント週報の自動生成（毎週日曜夜トリガーまたはボードから実行） --- */
+function getLatestWeeklyDoc_() {
+  const raw = PROPS_.getProperty('WEEKLY_DOC_LATEST');
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (e) { return null; }
+}
+
+function createWeeklyDoc() {
+  const today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const routines = getRoutines_();
+  const wk = getWeeklyReview_(today, routines);
+  const exp = getExpenses_(today);
+  const evs = getEvents_(today, 7);
+  const doc = DocumentApp.create('おうちボード 週報 ' + today);
+  const body = doc.getBody();
+  body.appendParagraph('おうちボード 週間ふり返り（' + today + '）').setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  const totalDone = wk.days.reduce((a, b) => a + b.done, 0);
+  const totalAll = wk.days.reduce((a, b) => a + b.total, 0);
+  const rate = totalAll ? Math.round((totalDone / totalAll) * 100) : 0;
+  body.appendParagraph('■ 今週のまとめ');
+  body.appendListItem('ルーティン達成率：' + rate + '%（' + totalDone + ' / ' + totalAll + '）');
+  body.appendListItem('集中作業（ポモドーロ）：' + wk.weekSets + '回 / 合計 ' + wk.weekMin + '分');
+  body.appendListItem('今月の支出：' + exp.total.toLocaleString() + '円' + (exp.budget ? '（予算 ' + exp.budget.toLocaleString() + '円）' : ''));
+  body.appendParagraph('■ 日別のルーティン記録');
+  wk.days.forEach((d) => { body.appendListItem(d.date + '（' + DOW.charAt(d.dow) + '）：' + d.done + ' / ' + d.total); });
+  body.appendParagraph('■ 来週の予定（' + evs.length + '件）');
+  evs.slice(0, 15).forEach((e) => { body.appendListItem((e.allDay ? e.start : e.start.slice(0, 16).replace('T', ' ')) + ' ' + e.title); });
+  doc.saveAndClose();
+  try {
+    const dir = getOrCreateFolder_('WEEKLY_FOLDER_ID', 'おうちボード 週報');
+    DriveApp.getFileById(doc.getId()).moveTo(dir);
+  } catch (e) {}
+  const info = { title: doc.getName(), url: doc.getUrl(), at: new Date().toISOString(), rate: rate, weekMin: wk.weekMin };
+  PROPS_.setProperty('WEEKLY_DOC_LATEST', JSON.stringify(info));
+  return { ok: true, weeklyDoc: info };
+}
+
+/* --- Gemini API アシスタント（無料枠対応・JSON構造化で予定/リマインダー/タスク/支出/タイマーを実行） --- */
+function sayGemini_(text, apiKey) {
+  const now = new Date();
+  const context = [
+    'いまの日時（日本時間）: ' + Utilities.formatDate(now, TZ, 'yyyy-MM-dd HH:mm') + '（' + DOW.charAt(Number(Utilities.formatDate(now, TZ, 'u')) % 7) + '曜日）',
+    safe_(() => dayEventsText_(0)) || '', safe_(() => dayEventsText_(1)) || '',
+    safe_(() => weatherText_(0)) || '', safe_(() => weatherText_(1)) || '',
+    '未完了メモ: ' + (safe_(getMemos_) || []).filter((m) => !m.done).slice(0, 15).map((m) => m.text).join('、'),
+  ].join('\n');
+  const prompt = 'あなたは壁掛けiPad「おうちボード」のアシスタントです。利用者のことばを読み取り、次のJSON形式だけで返してください。\n' +
+    '{"reply":"日本語1〜2文の短い返事","actions":[{"type":"reminder|event|task|expense|timer","title":"","start":"YYYY-MM-DDTHH:mm","all_day":false,"due":"YYYY-MM-DD","amount":0,"category":"食費","seconds":0}]}\n' +
+    '質問（予定・天気など）は下の情報だけで reply に答え actions は空配列に。\n\n' + context + '\n\n利用者: ' + text;
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(GEMINI_MODEL) + ':generateContent?key=' + encodeURIComponent(apiKey);
+  const res = UrlFetchApp.fetch(url, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json' },
+    }),
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Gemini API ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  const j = JSON.parse(res.getContentText());
+  const raw = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts && j.candidates[0].content.parts[0].text;
+  const out = JSON.parse(raw || '{}');
+  const result = { reply: String(out.reply || 'わかりました。'), ai: true };
+  (out.actions || []).forEach((a) => {
+    const title = String(a.title || '').trim();
+    if (a.type === 'timer' && a.seconds > 0) result.timer = { seconds: Number(a.seconds), label: title };
+    else if (a.type === 'expense' && a.amount > 0) { expenseAdd_(a.amount, a.category || 'その他', title); result.changed = true; }
+    else if (a.type === 'task' && title) { taskAdd_(null, title, a.due || ''); result.changed = true; }
     else if ((a.type === 'reminder' || a.type === 'event') && title && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(a.start || '')) {
       const iso = a.start.slice(0, 16) + ':00+09:00';
       if (a.type === 'reminder') remind_(title, iso, 30); else event_(title, iso, !!a.all_day, a.start.slice(0, 10));

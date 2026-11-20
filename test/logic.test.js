@@ -2,8 +2,9 @@
 const {
   WARN, isNight, nightPixelShift, rainLine, baseComment,
   daysDiff, parseSince, everyLabel, parseCd, warnFrom, areaFrom,
+  departInfo, pomodoroNext, budgetSummary, parseQuickInput, extractLifeFromMail,
 } = require("../board-logic.js");
-const { normalize } = require("../remind-parse.js");
+const { parseRemind, normalize } = require("../remind-parse.js");
 
 let fail = 0;
 const eq = (a, b, msg) => {
@@ -103,6 +104,42 @@ const sampleArea = {
 eq(areaFrom(sampleArea, "東京都日野市"), { place: "東京都日野市", area: "1321200", office: "130000" }, "areaFrom 日野市");
 eq(areaFrom(sampleArea, "神奈川県横浜市港北区"), { place: "神奈川県横浜市港北区", area: "1410000", office: "140000" }, "areaFrom 横浜市");
 eq(areaFrom(sampleArea, "不明な場所"), null, "areaFrom 不明");
+
+// departInfo（Google マップ所要時間からの出発逆算）
+const dep1 = departInfo(new Date(2026, 10, 20, 13, 0), 40, new Date(2026, 10, 20, 12, 5), 5);
+eq([dep1.leaveHM, dep1.minsLeft, dep1.urgent, dep1.text], ["12:15", 10, true, "12:15出発（あと10分）"], "出発10分前は urgent");
+const dep2 = departInfo(new Date(2026, 10, 20, 13, 0), 40, new Date(2026, 10, 20, 12, 20), 5);
+eq([dep2.leaveHM, dep2.urgent, dep2.text], ["12:15", true, "12:15出発（もう出発の時間）"], "出発時刻を過ぎたら案内変更");
+
+// pomodoroNext
+eq(pomodoroNext("work", 0), { phase: "break", minutes: 5, doneSets: 1, label: "休憩" }, "1セット完了→5分休憩");
+eq(pomodoroNext("work", 3), { phase: "longBreak", minutes: 15, doneSets: 4, label: "長い休憩" }, "4セット完了→15分長休憩");
+eq(pomodoroNext("break", 1), { phase: "work", minutes: 25, doneSets: 1, label: "集中" }, "休憩後→25分集中");
+
+// budgetSummary
+eq(budgetSummary(45000, 50000, "2026-11-15"), { total: 45000, budget: 50000, pct: 90, remain: 5000, pacePct: 50, over: false, warn: true }, "予算85%以上で warn");
+eq(budgetSummary(55000, 50000, "2026-11-15").over, true, "予算超過で over");
+
+// parseQuickInput
+const qNow = new Date(2026, 10, 20, 10, 0);
+eq(parseQuickInput("昼ごはん 850円", qNow, parseRemind, normalize), { kind: "expense", amount: 850, category: "食費", memo: "昼ごはん" }, "クイック入力：支出（食費）");
+eq(parseQuickInput("11/25までにゼミ資料を提出", qNow, parseRemind, normalize), { kind: "task", title: "ゼミ資料を提出", due: "2026-11-25" }, "クイック入力：締切つきタスク");
+eq(parseQuickInput("明日15時 歯医者", qNow, parseRemind, normalize).kind, "event", "クイック入力：予定");
+eq(parseQuickInput("1時間後に洗濯物を干すって教えて", qNow, parseRemind, normalize).kind, "remind", "クイック入力：リマインダー");
+eq(parseQuickInput("牛乳を買う", qNow, parseRemind, normalize), { kind: "task", title: "牛乳", due: "", shopping: true }, "クイック入力：買い物");
+
+// extractLifeFromMail
+const life = extractLifeFromMail([
+  { subject: "Amazon.co.jp 配達予定のお知らせ", from: "Amazon <auto@amazon.co.jp>", snippet: "本日 14:00-16:00 にお届け予定です", date: "2026-11-20T07:00:00Z" },
+  { subject: "お荷物お届け予定のお知らせ", from: "ヤマト運輸", snippet: "午前中のお届け予定", date: "2026-11-20T06:00:00Z" },
+  { subject: "配達完了のお知らせ", from: "ヤマト運輸", snippet: "お届け済みです", date: "2026-11-20T05:00:00Z" },
+  { subject: "お支払予定金額のご案内", from: "楽天カード", snippet: "11月27日のお引き落とし金額は 89,900円 です。", date: "2026-11-18T02:00:00Z" },
+]);
+eq(life.deliveries.length, 2, "配達完了を除き2件の宅配を抽出");
+eq([life.deliveries[0].carrier, life.deliveries[0].window], ["Amazon", "14-16時"], "Amazon 時間帯抽出");
+eq([life.deliveries[1].carrier, life.deliveries[1].window], ["ヤマト運輸", "午前中"], "ヤマト 午前中抽出");
+eq(life.bills.length, 1, "請求1件抽出");
+eq([life.bills[0].card, life.bills[0].amount, life.bills[0].payDate], ["楽天カード", 89900, "11/27"], "楽天カード 金額・引落日抽出");
 
 console.log(fail ? `\n${fail} 件失敗` : "\nすべて成功");
 process.exit(fail ? 1 : 0);
