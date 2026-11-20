@@ -105,6 +105,7 @@ function dispatchAction_(p, isPost) {
     case 'event': return event_(p.title, p.start, flag_(p.allday), p.date);
     case 'photo': return photo_(p.id);
     case 'month': return month_(p.ym);
+    case 'taskMonth': return taskMonth_(p.ym);
     case 'ping': return { ok: true };
     case 'upload': if (isPost) return upload_(p.name, p.data); break;
     case 'routines': if (isPost) return saveRoutines_(p.list); break;
@@ -387,6 +388,26 @@ function getChecksAndStreaks_(date, routines) {
     if (n >= 1) streaks[rt.id] = n;
   });
   return { checks: checks, streaks: streaks };
+}
+
+/** タスクの月カレンダー用：指定月（前後1週間含む）のチェック済みルーティン履歴を日付マップで返す */
+function taskMonth_(ym) {
+  if (!/^\d{4}-\d{2}$/.test(String(ym || ''))) return { ok: false, error: 'bad_month' };
+  const days = cached_('tm:' + ym, 90, () => {
+    const first = new Date(ym + '-01T12:00:00+09:00');
+    const from = Utilities.formatDate(new Date(first.getTime() - 7 * 86400000), TZ, 'yyyy-MM-dd');
+    const to = Utilities.formatDate(new Date(first.getTime() + 40 * 86400000), TZ, 'yyyy-MM-dd');
+    const rows = getSheet_().getSheetByName('checks').getDataRange().getValues().slice(1);
+    const out = {};
+    rows.forEach((r) => {
+      if (!(r[2] === true || String(r[2]).toUpperCase() === 'TRUE')) return;
+      const d = normCheckDate_(r[0]), id = String(r[1] || '');
+      if (!d || !id || d < from || d > to) return;
+      (out[d] = out[d] || []).push(id);
+    });
+    return out;
+  });
+  return { ok: true, ym: ym, days: days };
 }
 
 function getChecks_(date) {

@@ -287,13 +287,34 @@
     return { deliveries: deliveries.slice(0, 5), bills: bills.slice(0, 5) };
   }
 
+  // タスクの月カレンダー用：指定日（dateStr）のルーティン達成状況と「ときどきやること」の実施／次回予定を計算
+  function taskDaySummary(dateStr, dow, routines, checksMap, sinceList, todayStr) {
+    const rts = (routines || []).filter((r) => r && r.active !== false && (!r.days || !r.days.length || r.days.includes(dow)));
+    const dayChecks = (checksMap && checksMap[dateStr]) || {};
+    const doneSet = Array.isArray(dayChecks) ? new Set(dayChecks) : new Set(Object.keys(dayChecks).filter((k) => dayChecks[k]));
+    const doneRoutines = rts.filter((r) => doneSet.has(r.id));
+    const missedRoutines = rts.filter((r) => !doneSet.has(r.id));
+    const sinceDone = [], sinceDue = [];
+    (sinceList || []).forEach((s) => {
+      if (!s || !s.t) return;
+      const hist = Array.isArray(s.hist) && s.hist.length ? s.hist : (s.d ? [s.d] : []);
+      if (hist.includes(dateStr)) sinceDone.push(s);
+      if (s.every > 0 && s.d && dateStr > todayStr) {
+        const diff = daysDiff(s.d, dateStr);
+        if (diff > 0 && diff % s.every === 0) sinceDue.push(s);
+      }
+    });
+    const rate = rts.length ? Math.round((doneRoutines.length / rts.length) * 100) : null;
+    return { activeRoutines: rts, doneRoutines, missedRoutines, sinceDone, sinceDue, rate };
+  }
+
   const api = {
     WARN, PREFS,
     isNight, nightPixelShift,
     rainLine, baseComment,
     daysDiff, parseSince, everyLabel, parseCd,
     warnFrom, areaFrom,
-    departInfo, pomodoroNext, budgetSummary, parseQuickInput, extractLifeFromMail,
+    departInfo, pomodoroNext, budgetSummary, parseQuickInput, extractLifeFromMail, taskDaySummary,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.BoardLogic = api;

@@ -2,7 +2,7 @@
 const {
   WARN, isNight, nightPixelShift, rainLine, baseComment,
   daysDiff, parseSince, everyLabel, parseCd, warnFrom, areaFrom,
-  departInfo, pomodoroNext, budgetSummary, parseQuickInput, extractLifeFromMail,
+  departInfo, pomodoroNext, budgetSummary, parseQuickInput, extractLifeFromMail, taskDaySummary,
 } = require("../board-logic.js");
 const { parseRemind, normalize } = require("../remind-parse.js");
 
@@ -140,6 +140,16 @@ eq([life.deliveries[0].carrier, life.deliveries[0].window], ["Amazon", "14-16時
 eq([life.deliveries[1].carrier, life.deliveries[1].window], ["ヤマト運輸", "午前中"], "ヤマト 午前中抽出");
 eq(life.bills.length, 1, "請求1件抽出");
 eq([life.bills[0].card, life.bills[0].amount, life.bills[0].payDate], ["楽天カード", 89900, "11/27"], "楽天カード 金額・引落日抽出");
+
+// taskDaySummary（タスクの1か月カレンダー用）
+const sampleRts = [{ id: "a", title: "風呂", days: [], active: true }, { id: "b", title: "洗濯", days: [1, 3, 5], active: true }];
+const sampleSince = [{ t: "シーツ交換", d: "2026-11-10", every: 14, hist: ["2026-10-27", "2026-11-10"] }];
+const td1 = taskDaySummary("2026-11-10", 2, sampleRts, { "2026-11-10": ["a"] }, sampleSince, "2026-11-20");
+eq([td1.activeRoutines.length, td1.doneRoutines.length, td1.rate, td1.sinceDone.length], [1, 1, 100, 1], "火曜は風呂のみ対象・全完＋シーツ実施");
+const td2 = taskDaySummary("2026-11-24", 2, sampleRts, {}, sampleSince, "2026-11-20");
+eq([td2.sinceDue.length, td2.sinceDue[0].t], [1, "シーツ交換"], "11/10の14日後(11/24)が次回予定になる");
+const td3 = taskDaySummary("2026-11-20", 5, sampleRts, { "2026-11-20": { a: true, b: false } }, sampleSince, "2026-11-20");
+eq([td3.activeRoutines.length, td3.doneRoutines.length, td3.rate], [2, 1, 50], "金曜は2件対象・1件完了で50%");
 
 console.log(fail ? `\n${fail} 件失敗` : "\nすべて成功");
 process.exit(fail ? 1 : 0);
