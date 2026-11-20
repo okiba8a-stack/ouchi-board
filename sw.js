@@ -2,8 +2,8 @@
    つながらないとき（iPad を開き直した直後に Wi-Fi がまだ、など）にも前回の画面を出すため、
    画面の部品を手元に残す。いつもネットを先に見るので、新しい版はふつうに読まれる。
    version.json と裏方（Apps Script）・外の配信は残さない（古い情報を出さないため）。 */
-const CACHE = "ouchi-board-v3";
-const SHELL = ["./", "index.html", "remind-parse.js", "gomi.js", "sun.js", "manifest.webmanifest", "icon-180.png", "icon-512.png"];
+const CACHE = "ouchi-board-v4";
+const SHELL = ["./", "index.html", "remind-parse.js", "gomi.js", "sun.js", "board-logic.js", "manifest.webmanifest", "icon-180.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));

@@ -72,51 +72,55 @@ function getSheet_() {
 
 /* ---------- 入口 ---------- */
 
+function flag_(v) { return v === true || v === '1' || v === 1; }
+
+function dispatchAction_(p, isPost) {
+  if (/^(check|remind|mark|edit|delete|event|say|routines)$/.test(p.action)) bust_();
+  switch (p.action) {
+    case 'board': return board_(p.date);
+    case 'check': return check_(p.date, p.id, flag_(p.on));
+    case 'remind': return remind_(p.title, p.start, Number(p.minutes || 30));
+    case 'mark': return remindMark_(p.id, flag_(p.on));
+    case 'scenic': return scenic_();
+    case 'say': return say_(p.text);
+    case 'memoAdd': return memoAdd_(p.text);
+    case 'memoSet': return memoSet_(p.id, flag_(p.on));
+    case 'memoDel': return memoDel_(p.id);
+    case 'mailRead': return mailRead_(p.id, flag_(p.all));
+    case 'mailPrefs': return mailPrefsSet_(flag_(p.important), p.from, p.days);
+    case 'photoDelete': return photoDelete_(p.id);
+    case 'edit': return editItem_(p);
+    case 'delete': return deleteItem_(p);
+    case 'event': return event_(p.title, p.start, flag_(p.allday), p.date);
+    case 'photo': return photo_(p.id);
+    case 'month': return month_(p.ym);
+    case 'ping': return { ok: true };
+    case 'upload': if (isPost) return upload_(p.name, p.data); break;
+    case 'routines': if (isPost) return saveRoutines_(p.list); break;
+    case 'photoOrder': if (isPost) return photoOrder_(p.ids); break;
+  }
+  return { ok: false, error: 'unknown_action' };
+}
+
 function doGet(e) {
   const p = (e && e.parameter) || {};
   const key = PropertiesService.getScriptProperties().getProperty('KEY');
   if (!key || p.key !== key) return json_({ ok: false, error: 'bad_key' });
   try {
-    if (/^(remind|mark|edit|delete|event|say)$/.test(p.action)) bust_();
-    switch (p.action) {
-      case 'board': return json_(board_(p.date));
-      case 'check': return json_(check_(p.date, p.id, p.on === '1'));
-      case 'remind': return json_(remind_(p.title, p.start, Number(p.minutes || 30)));
-      case 'mark': return json_(remindMark_(p.id, p.on === '1'));
-      case 'scenic': return json_(scenic_());
-      case 'say': return json_(say_(p.text));
-      case 'memoAdd': return json_(memoAdd_(p.text));
-      case 'memoSet': return json_(memoSet_(p.id, p.on === '1'));
-      case 'memoDel': return json_(memoDel_(p.id));
-      case 'mailRead': return json_(mailRead_(p.id, p.all === '1'));
-      case 'mailPrefs': return json_(mailPrefsSet_(p.important === '1', p.from, p.days));
-      case 'photoDelete': return json_(photoDelete_(p.id));
-      case 'edit': return json_(editItem_(p));
-      case 'delete': return json_(deleteItem_(p));
-      case 'event': return json_(event_(p.title, p.start, p.allday === '1', p.date));
-      case 'photo': return json_(photo_(p.id));
-      case 'month': return json_(month_(p.ym));
-      case 'ping': return json_({ ok: true });
-      default: return json_({ ok: false, error: 'unknown_action' });
-    }
+    return json_(dispatchAction_(p, false));
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
   }
 }
 
-/** 大きなデータ（写真・ルーティンの一覧）は POST で受け取る */
+/** 大きなデータ（写真・ルーティンの一覧）や書き込み系操作は POST で受け取る */
 function doPost(e) {
   let p = {};
   try { p = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'bad_request' }); }
   const key = PropertiesService.getScriptProperties().getProperty('KEY');
   if (!key || p.key !== key) return json_({ ok: false, error: 'bad_key' });
   try {
-    switch (p.action) {
-      case 'upload': return json_(upload_(p.name, p.data));
-      case 'routines': return json_(saveRoutines_(p.list));
-      case 'photoOrder': return json_(photoOrder_(p.ids));
-      default: return json_({ ok: false, error: 'unknown_action' });
-    }
+    return json_(dispatchAction_(p, true));
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
   }
@@ -145,6 +149,7 @@ function board_(dateStr) {
   const date = dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr : Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const weather = safe_(getWeather_);
   const routines = getRoutines_();
+  const cs = safe_(() => cached_('chk:' + date, 90, () => getChecksAndStreaks_(date, routines))) || { checks: {}, streaks: {} };
   return {
     ok: true,
     date: date,
@@ -157,8 +162,8 @@ function board_(dateStr) {
     comment: weather ? comment_(weather) : '',
     news: safe_(getNews_),
     routines: routines,
-    checks: getChecks_(date),
-    streaks: safe_(() => getStreaks_(date, routines)) || {},
+    checks: cs.checks || {},
+    streaks: cs.streaks || {},
     photos: safe_(getPhotoIds_) || [],
     memos: safe_(getMemos_) || [],
     mail: safe_(getMail_),
@@ -319,16 +324,24 @@ function getRoutines_() {
   });
 }
 
-/** ルーティンの連続記録：やる日（曜日の指定があればその曜日だけ）を、きのうからさかのぼって何回続けたか（きょうの分は画面で足す） */
-function getStreaks_(date, routines) {
+function normCheckDate_(v) {
+  return v instanceof Date ? Utilities.formatDate(v, TZ, 'yyyy-MM-dd') : String(v || '').replace(/^'/, '');
+}
+
+/** checks シートを1回だけ読み、当日のチェック状態と前日までの連続記録を同時に計算する */
+function getChecksAndStreaks_(date, routines) {
   const rows = getSheet_().getSheetByName('checks').getDataRange().getValues().slice(1);
+  const checks = {};
   const done = {};
   rows.forEach((r) => {
-    if (!(r[2] === true || String(r[2]).toUpperCase() === 'TRUE')) return;
-    const d = r[0] instanceof Date ? Utilities.formatDate(r[0], TZ, 'yyyy-MM-dd') : String(r[0]).replace(/^'/, '');
-    (done[String(r[1])] = done[String(r[1])] || {})[d] = true;
+    const d = normCheckDate_(r[0]);
+    const id = String(r[1] || '');
+    if (!d || !id) return;
+    const on = r[2] === true || String(r[2]).toUpperCase() === 'TRUE';
+    if (d === date) checks[id] = on;
+    if (on) (done[id] = done[id] || {})[d] = true;
   });
-  const out = {};
+  const streaks = {};
   const base = new Date(date + 'T12:00:00+09:00');
   // きのうから180日前までの日付と曜日を先に1回だけ作る
   const back = [];
@@ -344,17 +357,16 @@ function getStreaks_(date, routines) {
       if (!has[b.key]) break;
       n++;
     }
-    if (n >= 1) out[rt.id] = n;
+    if (n >= 1) streaks[rt.id] = n;
   });
-  return out;
+  return { checks: checks, streaks: streaks };
 }
 
 function getChecks_(date) {
   const rows = getSheet_().getSheetByName('checks').getDataRange().getValues().slice(1);
   const out = {};
   rows.forEach((r) => {
-    const d = r[0] instanceof Date ? Utilities.formatDate(r[0], TZ, 'yyyy-MM-dd') : String(r[0]);
-    if (d === date) out[String(r[1])] = r[2] === true || String(r[2]).toUpperCase() === 'TRUE';
+    if (normCheckDate_(r[0]) === date) out[String(r[1])] = r[2] === true || String(r[2]).toUpperCase() === 'TRUE';
   });
   return out;
 }
@@ -368,8 +380,7 @@ function check_(date, id, on) {
     const values = sh.getDataRange().getValues();
     let row = -1;
     for (let i = 1; i < values.length; i++) {
-      const d = values[i][0] instanceof Date ? Utilities.formatDate(values[i][0], TZ, 'yyyy-MM-dd') : String(values[i][0]);
-      if (d === date && String(values[i][1]) === id) { row = i + 1; break; }
+      if (normCheckDate_(values[i][0]) === date && String(values[i][1]) === id) { row = i + 1; break; }
     }
     // 日付は文字列のまま残す（自動で日付型にされないよう先頭に ' を付ける）
     const rec = ["'" + date, id, on, new Date()];
@@ -571,7 +582,7 @@ function editItem_(p) {
   const ev = findItem_(p);
   const title = String(p.title || '').trim();
   if (!title) throw new Error('内容が空です');
-  if (p.allday === '1' && p.kind !== 'rm') {
+  if (flag_(p.allday) && p.kind !== 'rm') {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(p.date || '')) throw new Error('日付が読めません');
     ev.setAllDayDate(new Date(p.date + 'T12:00:00+09:00'));
   } else {
@@ -743,13 +754,21 @@ function getMailBrief_() {
   const it = DriveApp.getFoldersByName(BRIEF_FOLDER);
   if (!it.hasNext()) return null;
   const files = [], fi = it.next().getFiles();
-  while (fi.hasNext()) files.push(fi.next());
+  while (fi.hasNext()) {
+    const f0 = fi.next(), mt = String(f0.getMimeType() || '');
+    if (mt === MimeType.GOOGLE_DOCS || mt.indexOf('text/') === 0) files.push(f0);
+  }
   if (!files.length) return null;
   files.sort((a, b) => b.getDateCreated() - a.getDateCreated());
   const old = Date.now() - 7 * 86400000;
   files.slice(1).forEach((f) => { if (f.getDateCreated().getTime() < old) f.setTrashed(true); });
   const f = files[0];
-  const text = f.getMimeType() === MimeType.GOOGLE_DOCS ? '' : f.getBlob().getDataAsString('UTF-8');
+  let text = '';
+  if (f.getMimeType() === MimeType.GOOGLE_DOCS) {
+    try { text = DocumentApp.openById(f.getId()).getBody().getText(); } catch (e) { text = ''; }
+  } else {
+    text = f.getBlob().getDataAsString('UTF-8');
+  }
   const out = { text: String(text).slice(0, 2000), at: f.getDateCreated().toISOString(), title: f.getName() };
   cache.put('mailBrief', JSON.stringify(out), 10 * 60);
   return out;
@@ -808,9 +827,9 @@ function dayEventsText_(offset) {
   const now = new Date(Date.now() + offset * 86400000);
   const date = Utilities.formatDate(now, TZ, 'yyyy-MM-dd');
   const name = offset === 0 ? '今日' : offset === 1 ? '明日' : 'あさって';
-  const evs = getEvents_(date).filter((e) => (e.allDay ? e.start <= date && date < e.end : Utilities.formatDate(new Date(e.start), TZ, 'yyyy-MM-dd') === date))
+  const evs = cached_('ev:' + date, 90, () => getEvents_(date)).filter((e) => (e.allDay ? e.start <= date && date < e.end : Utilities.formatDate(new Date(e.start), TZ, 'yyyy-MM-dd') === date))
     .sort((a, b) => (a.allDay === b.allDay ? String(a.start).localeCompare(String(b.start)) : a.allDay ? -1 : 1));
-  const rems = getReminders_(date).filter((r) => Utilities.formatDate(new Date(r.start), TZ, 'yyyy-MM-dd') === date);
+  const rems = cached_('rm:' + date, 90, () => getReminders_(date)).filter((r) => Utilities.formatDate(new Date(r.start), TZ, 'yyyy-MM-dd') === date);
   if (!evs.length && !rems.length) return name + 'の予定はありません。';
   const parts = evs.map((e) => (e.allDay ? '終日 ' : Utilities.formatDate(new Date(e.start), TZ, 'H時mm分').replace('00分', '') + ' ') + e.title)
     .concat(rems.map((r) => 'リマインダー ' + Utilities.formatDate(new Date(r.start), TZ, 'H時mm分').replace('00分', '') + ' ' + r.title));
@@ -923,7 +942,7 @@ function sayClaude_(text, key) {
   return result;
 }
 
-/* ========== 日付の読み取り（remind-parse.js と同じもの。直すときは remind-parse.js を直して _patch で入れ直す） ========== */
+/* ========== 日付の読み取り（remind-parse.js と同じもの。直すときは remind-parse.js を直して release.py で入れ直す） ========== */
 /* 「1週間後にパンチェッタのラップを外す」のような文から、日時と内容を取り出す。
    ブラウザでは window.parseRemind、Node では module.exports で使う。 */
 (function (root) {

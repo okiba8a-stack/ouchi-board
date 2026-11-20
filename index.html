@@ -203,6 +203,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .btn:focus-visible, .chk:focus-visible, input:focus-visible, .dots button:focus-visible, .news-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rm-preview { background: var(--soft); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .rm-preview .what { font-weight: 700; overflow-wrap: anywhere; }
+.rm-preview .what-in { width: 100%; font-weight: 700; font-size: 17px; padding: 6px 2px; min-height: 40px; }
 .rm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .rm-item { display: grid; grid-template-columns: 76px minmax(0,1fr) auto; gap: 14px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .rm-item:last-child { border-bottom: 0; }
@@ -367,9 +368,21 @@ input::placeholder { color: var(--muted); opacity: .8; }
 .cal-grid .wd { text-align: center; font-size: 12px; color: var(--muted); padding: 4px 0; }
 .cal-grid .wd.sun, .cal-grid .day.sun .n, .cal-grid .day.hol .n { color: #ffb59a; }
 .cal-grid .wd.sat, .cal-grid .day.sat .n { color: #a9cdf5; }
-.cal-grid .day { min-height: 74px; border-radius: 10px; background: rgba(255,255,255,.05); padding: 4px 6px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; }
+.cal-grid .day { min-height: 74px; border-radius: 10px; background: rgba(255,255,255,.05); padding: 4px 6px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; cursor: pointer; text-align: left; border: 0; color: inherit; font: inherit; }
 .cal-grid .day.out { opacity: .35; }
 .cal-grid .day.today { outline: 2px solid var(--accent); }
+.cal-grid .day.sel { background: rgba(191,227,204,.2); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.cal-detail { background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.cal-detail-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 10px; font-weight: 700; font-size: 16px; }
+.cal-detail-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cal-detail-list li { display: grid; grid-template-columns: 64px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+.cal-detail-list li:last-child { border-bottom: 0; }
+.cal-detail-list .t { font-family: var(--font-num); color: var(--accent); font-size: 14px; }
+.cal-detail-list .gm { color: #ffd98a; }
+#homeClockWrap { transition: transform 2s ease; }
+.memo.pending { opacity: .55; pointer-events: none; }
+.sheet-bg.visual-ring .sheet { animation: ringPulse 1.2s ease-in-out infinite; }
+@keyframes ringPulse { 0%, 100% { box-shadow: 0 20px 60px rgba(0,0,0,.4), 0 0 0 0 rgba(255,217,138,.45); } 50% { box-shadow: 0 20px 60px rgba(0,0,0,.4), 0 0 0 16px rgba(255,217,138,0); border-color: #ffd98a; } }
 .cal-grid .n { font-family: var(--font-num); font-size: 15px; }
 .cal-grid .hn { font-size: 10px; color: #ffb59a; line-height: 1.2; }
 .cal-grid .ev { font-size: 11px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 4px; border-radius: 4px; background: rgba(191,227,204,.18); }
@@ -451,7 +464,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     <div class="photo" id="photoA"></div><div class="photo" id="photoB"></div><div class="scrim"></div><div class="credit" id="credit"></div>
     <div class="home-inner">
       <div class="wx" id="wx"></div>
-      <div>
+      <div id="homeClockWrap">
         <div class="clock" id="clock"><span id="clockHM">--:--</span><span class="sec" id="clockSec" aria-hidden="true"><i></i><i></i></span></div>
         <div class="date" id="date"></div>
         <div class="next" id="next"></div>
@@ -589,6 +602,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         <div class="tool-body">
           <p class="note" id="verNote"></p>
           <p class="note" id="bandNote"></p>
+          <div class="rm-row wrap" id="verUpdate" hidden><span class="rm-msg">新しい版があります（タイマーやアラームが止まらないよう自動更新を待っています）</span><button class="btn primary" type="button" id="verApply">いま更新</button></div>
           <div class="rm-row wrap"><button class="btn" type="button" id="reload">最新版に更新</button><button class="btn" type="button" id="openSetup">接続の設定</button><button class="btn" type="button" id="reinstall">ホーム画面に入れ直す</button></div>
           <p class="rm-msg" id="reinstallMsg"></p>
           <h2>表示の設定</h2>
@@ -644,6 +658,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <div class="sheet wide cal-sheet">
     <h2><span id="calTitle"></span> <small id="calNote"></small></h2>
     <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-detail" id="calDetail" hidden></div>
     <div class="rm-row"><button class="btn" type="button" id="calPrev" aria-label="前の月">‹</button><button class="btn" type="button" id="calNow">今月</button><button class="btn" type="button" id="calNext" aria-label="次の月">›</button><span class="spacer"></span><button class="btn" type="button" id="calClose">閉じる</button></div>
   </div>
 </div>
@@ -692,7 +707,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
   <div class="sheet">
     <h2 id="ringHead">アラーム</h2>
     <div class="ring-time" id="ringTime"></div>
-    <div class="rm-row"><button class="btn primary" type="button" id="ringStop" style="flex:1;min-height:64px;font-size:20px">止める</button></div>
+    <p class="rm-msg" id="ringMsg" style="text-align:center"></p>
+    <div class="rm-row"><button class="btn" type="button" id="ringSnooze" hidden style="min-height:64px;font-size:18px">5分あとで</button><button class="btn primary" type="button" id="ringStop" style="flex:1;min-height:64px;font-size:20px">止める</button></div>
   </div>
 </div>
 
@@ -727,14 +743,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
   window.addEventListener("resize", check);
 })();
 </script>
-<script src="remind-parse.js?v=2026-11-17_0003"></script>
-<script src="gomi.js?v=2026-11-17_0003"></script>
-<script src="sun.js?v=2026-11-17_0003"></script>
+<script src="remind-parse.js?v=2026-11-20_1157"></script>
+<script src="gomi.js?v=2026-11-20_1157"></script>
+<script src="sun.js?v=2026-11-20_1157"></script>
+<script src="board-logic.js?v=2026-11-20_1157"></script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
   const WD = ["日","月","火","水","木","金","土"];
-  const VERSION = "2026-11-17 00:03";
+  const VERSION = "2026-11-20 11:57";
   const PHOTO_EVERY = 5 * 60 * 1000;   // 写真を切り替える間隔（設定がないとき）
   function photoEvery() { const m = Number(cfg && cfg.photoMin); return m > 0 ? m * 60000 : PHOTO_EVERY; }
   const IDLE_BACK = 3 * 60 * 1000;     // さわらないと1枚目に戻るまでの時間
@@ -791,6 +808,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   $("toolAlarm").addEventListener("click", () => openAlarm());
   $("toolRadar").addEventListener("click", () => openWeather());
   $("reload").addEventListener("click", () => location.reload());
+  $("verApply").addEventListener("click", () => location.reload());
   // 古い設定のアイコンを作り直すため、設定入りのアドレスをコピーする（Safari に貼って開き、共有 →「ホーム画面に追加」）
   $("reinstall").addEventListener("click", async () => {
     const msg = $("reinstallMsg");
@@ -822,13 +840,30 @@ input::placeholder { color: var(--muted); opacity: .8; }
     } finally { clearTimeout(timer); }
   }
 
-  // 大きなデータは POST で送る（ヘッダーを付けないので、事前確認なしで届く）
+  // 大きなデータや書き込み系は POST で送る（ヘッダーを付けないので、事前確認なしで届く）
+  async function rawPost(obj, c) {
+    c = c || cfg;
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 30000);
+    try {
+      const res = await fetch(c.api, { method: "POST", body: JSON.stringify({ ...obj, key: c.key }), redirect: "follow", signal: ctl.signal });
+      if (!res.ok) throw new Error("通信エラー " + res.status);
+      return await res.json();
+    } finally { clearTimeout(timer); }
+  }
   async function callPost(obj) {
-    const res = await fetch(cfg.api, { method: "POST", body: JSON.stringify({ ...obj, key: cfg.key }), redirect: "follow" });
-    if (!res.ok) throw new Error("通信エラー " + res.status);
-    const r = await res.json();
+    const r = await rawPost(obj);
     if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
     return r;
+  }
+  // 書き込み系は POST 優先。古い裏方（doPost 未対応）なら自動で GET にフォールバックする
+  let postWriteSupported = true;
+  async function callWrite(q, c) {
+    if (postWriteSupported) {
+      const r = await rawPost(q, c);
+      if (r && r.error === "unknown_action") { postWriteSupported = false; return callApi(q, c); }
+      return r;
+    }
+    return callApi(q, c);
   }
 
   /* ---------- ページ送り ---------- */
@@ -890,7 +925,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (t.classList.contains("open")) closeTool(); else openTool(t.dataset.tool);
   });
   $("toolScrim").addEventListener("click", closeTool);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTool(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!$("sheetBg").hidden) { closeSheet(); return; }
+    if (!$("alBg").hidden) { closeAlarm(); return; }
+    for (const id of ["wxBg", "calBg", "wfBg", "infoBg"]) {
+      if (!$(id).hidden) { $(id).hidden = true; return; }
+    }
+    closeTool();
+  });
   function goToTool(name) { goTo(TOOLS); openTool(name); }
   function updateDotsTone() { $("dots").classList.toggle("onphoto", page === 0 && $("home").classList.contains("hasphoto")); if (typeof tintBar === "function") tintBar(); }
   dots.forEach((d, k) => d.addEventListener("click", () => goTo(k)));
@@ -954,7 +997,16 @@ input::placeholder { color: var(--muted); opacity: .8; }
   document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
   /* ---------- 時計 ---------- */
-  let today = ymd(new Date());
+  let today = ymd(new Date()), lastHour = new Date().getHours();
+  function updateNightShift(d) {
+    const w = $("homeClockWrap"); if (!w) return;
+    if (document.body.classList.contains("night") && !calm.matches && window.BoardLogic) {
+      const s = BoardLogic.nightPixelShift(d, 10);
+      w.style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;
+    } else if (w.style.transform) {
+      w.style.transform = "";
+    }
+  }
   function tick() {
     const d = new Date();
     $("clockHM").textContent = hm(d);
@@ -966,12 +1018,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (hol) dEl.append(el("span", "hol", hol));
     dEl.append(el("span", "sub", `令和${d.getFullYear()-2018}年`));
     renderAlarmTag(); checkAlarm(d);
-    const h = d.getHours();
     const wasNight = document.body.classList.contains("night");
     document.body.classList.toggle("night", isNight(d));
     if (wasNight !== document.body.classList.contains("night")) tintBar();   // 夜になった・朝になったら帯の色も変える
-    if (ymd(d) !== today) { today = ymd(d); checks = {}; render(); renderNext(); renderGomi(); renderSince(); renderCd(); renderWeek(); refresh(); loadHolidays(); extra.at = { uv: 0, feels: 0 }; loadExtra(); }
-    else { renderNext(); renderReminders(); }
+    updateNightShift(d);
+    if (ymd(d) !== today) { today = ymd(d); lastHour = d.getHours(); checks = {}; clearMonthCache(); render(); renderNext(); renderGomi(); renderSince(); renderCd(); renderWeek(); refresh(); loadHolidays(); extra.at = { uv: 0, feels: 0 }; loadExtra(); }
+    else {
+      if (d.getHours() !== lastHour) { lastHour = d.getHours(); renderWeather(); }
+      renderNext(); renderReminders();
+    }
   }
 
   // 秒：tick（10秒おき）とは別に、秒の数字2つだけを毎秒書き換える。変わった桁だけ下からふわっと出す（夜と「動きを減らす」設定では出すだけ）
@@ -999,7 +1054,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   let lock = null;
   async function wake() { try { if (navigator.wakeLock && document.visibilityState === "visible" && !lock) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => { lock = null; }); } } catch (e) {} }
   document.addEventListener("visibilitychange", () => { wake(); if (document.visibilityState === "visible") refresh(); });
-  document.addEventListener("click", wake, { once: true });
+  document.addEventListener("pointerdown", () => { unlockAudio(); wake(); }, { passive: true });
   wake();
 
   /* ---------- 天気アイコン ---------- */
@@ -1028,12 +1083,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   let warnList = [];   // 気象警報（checkWarn で更新）
   // 夜に暗くする時間帯（cfg.night = { from: "23:00", to: "06:00", off: false }）
   function nightPref() { return Object.assign({ from: "23:00", to: "06:00", off: false }, (cfg && cfg.night) || {}); }
-  function isNight(d) {
-    const n = nightPref(); if (n.off) return false;
-    const m = (t) => { const [a, b] = String(t).split(":").map(Number); return a * 60 + (b || 0); };
-    const now = d.getHours() * 60 + d.getMinutes(), a = m(n.from), b = m(n.to);
-    return a === b ? false : a < b ? now >= a && now < b : now >= a || now < b;
-  }
+  function isNight(d) { return window.BoardLogic.isNight(d, nightPref()); }
   let warnPlace = null; // 最後に警報を読んだときの地点
   let topColor = null;  // 写真の上端の色（時刻表示の帯の色に使う）
   let extra = { uv: {}, feels: {}, at: { uv: 0, feels: 0 }, place: { uv: "", feels: "" } };   // 紫外線・体感温度（loadExtra で更新）
@@ -1159,7 +1209,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
   async function markReminder(r) {
     r.done = !r.done; renderReminders(); renderNext();
     if (DEMO) return;
-    try { const res = await callApi({ action: "mark", id: r.id, on: r.done ? "1" : "0" }); if (!res.ok) throw new Error(res.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : res.error); }
+    try { const res = await callWrite({ action: "mark", id: r.id, on: r.done ? "1" : "0" }); if (!res.ok) throw new Error(res.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : res.error); }
     catch (e) { $("rmMsg").textContent = "チェックを保存できませんでした：" + e.message; refresh(); }
   }
   function renderCalendar() {
@@ -1377,7 +1427,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       catch (e) { resolve(null); }
     });
   }
-  const photoWait = {};   // 同じ写真を二重に取りに行かない
+  const photoWait = {};   // 同じ写真を二重に取りに行かない（完了後は解放してメモリに溜めない）
   function getPhoto(id) {
     if (!id) return Promise.resolve(null);
     if (photoWait[id]) return photoWait[id];
@@ -1390,7 +1440,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       } catch (e) {}
       return null;
     })();
-    photoWait[id].then((v) => { if (!v) delete photoWait[id]; });
+    photoWait[id].finally(() => { delete photoWait[id]; });
     return photoWait[id];
   }
   // まだ端末にない写真を、1枚ずつ先に取っておく。一覧から消えた写真は端末からも消す
@@ -1426,7 +1476,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
         if (!del.classList.contains("sure")) { del.classList.add("sure"); del.textContent = "削除"; setTimeout(() => { del.classList.remove("sure"); del.textContent = "×"; }, 3000); return; }   // 2回押しで削除
         del.disabled = true;
         try {
-          const r = await callApi({ action: "photoDelete", id });
+          const r = await callWrite({ action: "photoDelete", id });
           if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
           await idbDo("readwrite", (st) => st.delete(id));
           setPhotos(photoIds.filter((x) => x !== id)); if (data) data.photos = photoIds.slice();
@@ -1554,13 +1604,15 @@ input::placeholder { color: var(--muted); opacity: .8; }
     } finally { loading = false; }
   }
 
-  // 新しい版が公開されていたら、自分で読み込み直す（入力中や窓を開いているときは待つ）
+  // 新しい版が公開されていたら、自分で読み込み直す（入力中・窓を開いている間・タイマーやアラームが動いている間は待つ）
   async function checkVersion() {
     if (DEMO || location.protocol === "file:") return;
     try {
       const r = await (await fetch("version.json?" + Date.now(), { cache: "no-store" })).json();
-      const busy = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.querySelector(".sheet-bg:not([hidden]), .tool.open") || rtDraft;
-      if (r.version && r.version !== VERSION && !busy) location.reload();
+      if (!r.version || r.version === VERSION) { $("verUpdate").hidden = true; return; }
+      const busy = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName) || document.querySelector(".sheet-bg:not([hidden]), .tool.open") || rtDraft || timers.length > 0 || !!alarm || !!ringTimer;
+      if (busy) { $("verUpdate").hidden = false; return; }
+      location.reload();
     } catch (e) {}
   }
   setInterval(checkVersion, 5 * 60 * 1000);
@@ -1574,7 +1626,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (DEMO) return;
     const on = checks[id], date = today;
     pendingChecks++;
-    queue = queue.then(() => callApi({ action: "check", date, id, on: on ? "1" : "0" }))
+    queue = queue.then(() => callWrite({ action: "check", date, id, on: on ? "1" : "0" }))
       .catch(() => { $("statusText").textContent = "チェックを保存できませんでした"; })
       .finally(() => { pendingChecks--; });
   }
@@ -1639,9 +1691,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
     $("shSave").disabled = $("shDel").disabled = true; msg.textContent = doneText;
     try {
       const e = sheetItem.e;
-      const r = await callApi({ ...q, kind: sheetItem.kind, id: e.id, cal: e.cal || "" });
+      const r = await callWrite({ ...q, kind: sheetItem.kind, id: e.id, cal: e.cal || "" });
       if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
-      closeSheet(); refresh();
+      clearMonthCache(); closeSheet(); refresh();
     } catch (err) { msg.textContent = "できませんでした：" + err.message; msg.classList.add("err"); $("shSave").disabled = $("shDel").disabled = false; }
   }
   $("sheet").addEventListener("submit", (ev) => {
@@ -1656,40 +1708,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
     sheetCall({ action: "delete" }, "削除しています…");
   });
 
-  /* ---------- 雨の降り出し・止む時刻（発表された毎時の降水確率から、決まった文で） ---------- */
-  const SNOW = new Set([71, 73, 75, 77, 85, 86]);
-  function rainLine(w, nowArg) {
-    const now = nowArg || new Date(), h0 = new Date(now); h0.setMinutes(0, 0, 0);
-    const hrs = (w.hours || []).filter((h) => new Date(h.time) >= h0).slice(0, 24);
-    if (!hrs.length) return "";
-    const wet = (h) => (h.pop ?? 0) >= 50;
-    const kind = (h) => (SNOW.has(h.code) ? "雪" : "雨");
-    const d0 = new Date(now); d0.setHours(0, 0, 0, 0);
-    const when = (h) => {
-      const t = new Date(h.time), dd = Math.round((new Date(t).setHours(0, 0, 0, 0) - d0) / 864e5);
-      return (dd === 1 ? "あしたの" : dd >= 2 ? "あさっての" : "") + t.getHours() + "時";
-    };
-    if (wet(hrs[0])) {
-      const i = hrs.findIndex((h) => !wet(h));
-      return i < 0 ? `${kind(hrs[0])}はしばらく続く予報です。` : `${kind(hrs[0])}は${when(hrs[i])}ごろまでの予報です。`;
-    }
-    const i = hrs.slice(0, 18).findIndex(wet);
-    if (i >= 0) {
-      const h = hrs[i], t = new Date(h.time);
-      const laundry = t.getDate() === now.getDate() && now.getHours() >= 6 && t.getHours() >= 9 && t.getHours() <= 19 ? `洗濯物は${t.getHours() - 1}時までに取りこんで。` : "";
-      return `${when(h)}ごろから${kind(h)}の予報（降水確率${h.pop}%）。${laundry}`;
-    }
-    const hr = now.getHours();
-    if (hr >= 5 && hr < 12 && hrs.slice(0, 18 - hr).every((h) => (h.pop ?? 0) < 30)) return "夕方まで雨の心配はなさそう。洗濯日和です。";
-    return "";
-  }
-
-  // 裏方のひとこと（1日の降水確率から作る）が、毎時の予報から作った雨の一文と食い違うときは傘の文を外す
-  function baseComment(rl) {
-    let c = (data && data.comment) || "";
-    if (/予報/.test(rl)) c = c.replace(/傘はいらなそうです。?/, "");
-    return c.trim();
-  }
+  /* ---------- 雨の降り出し・止む時刻（board-logic.js に委譲） ---------- */
+  function rainLine(w, nowArg) { return window.BoardLogic.rainLine(w, nowArg); }
+  function baseComment(rl) { return window.BoardLogic.baseComment((data && data.comment) || "", rl); }
 
   /* ---------- くわしい天気 ---------- */
   function openWeather() {
@@ -1771,13 +1792,14 @@ input::placeholder { color: var(--muted); opacity: .8; }
     } catch (e) { msg.textContent = "雨雲を取得できませんでした。"; }
   }
   $("wxClose").addEventListener("click", () => { $("wxBg").hidden = true; });
-  ["wxBg", "alBg"].forEach((id) => $(id).addEventListener("pointerdown", (e) => { if (e.target === $(id)) $(id).hidden = true; }));
+  $("wxBg").addEventListener("pointerdown", (e) => { if (e.target === $("wxBg")) $("wxBg").hidden = true; });
+  $("alBg").addEventListener("pointerdown", (e) => { if (e.target === $("alBg")) closeAlarm(); });
 
   /* ---------- アラーム（ボードを開いている間だけ鳴る） ---------- */
-  let alarm = store.get("ouchi.alarm");   // { time: "07:00", daily: true, fired: "2026-11-13 07:00" }
+  let alarm = store.get("ouchi.alarm");   // { time: "07:00", daily: true, fired: "2026-11-13 07:00", snooze: null }
   let actx = null, ringTimer = null;
   function beep() {
-    if (!actx) return;
+    if (!actx || actx.state !== "running") return false;
     [0, .25, .5].forEach((t) => {
       const o = actx.createOscillator(), g = actx.createGain();
       o.type = "sine"; o.frequency.value = 880; o.connect(g); g.connect(actx.destination);
@@ -1785,35 +1807,43 @@ input::placeholder { color: var(--muted); opacity: .8; }
       g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(.5, t0 + .02); g.gain.linearRampToValueAtTime(0, t0 + .18);
       o.start(t0); o.stop(t0 + .2);
     });
+    return true;
   }
   function unlockAudio() {
-    try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) { actx = null; }
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state !== "running") return actx.resume().catch(() => {});
+    } catch (e) { actx = null; }
+    return Promise.resolve();
   }
   function renderAlarmTag() {
     let tag = $("alarmTag");
     if (!alarm) { if (tag) tag.remove(); return; }
     if (!tag) { tag = el("span", "alarm-tag"); tag.id = "alarmTag"; }
-    tag.textContent = `⏰ ${alarm.time}${alarm.daily ? " 毎日" : ""}`;
+    tag.textContent = alarm.snooze ? `⏰ ${hm(new Date(alarm.snooze))} スヌーズ` : `⏰ ${alarm.time}${alarm.daily ? " 毎日" : ""}`;
     $("date").append(tag);
   }
   function openAlarm() {
-    $("alTime").value = alarm ? alarm.time : "07:00"; $("alDaily").checked = !!(alarm && alarm.daily); $("alRemind").checked = false;
+    $("alTime").value = (alarm && alarm.time) || "07:00"; $("alDaily").checked = !!(alarm && alarm.daily); $("alRemind").checked = false;
     $("alOff").hidden = !alarm; $("alMsg").textContent = ""; $("alBg").hidden = false;
   }
-  $("alClose").addEventListener("click", () => { $("alBg").hidden = true; });
-  $("alOff").addEventListener("click", () => { alarm = null; store.set("ouchi.alarm", null); renderAlarmTag(); $("alBg").hidden = true; });
+  function closeAlarm() {
+    stopSong(); $("alSoundTest").textContent = "試しに鳴らす"; $("alBg").hidden = true;
+  }
+  $("alClose").addEventListener("click", closeAlarm);
+  $("alOff").addEventListener("click", () => { alarm = null; store.set("ouchi.alarm", null); renderAlarmTag(); closeAlarm(); });
   $("alForm").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const time = $("alTime").value; if (!time) return;
-    unlockAudio(); beep();   // セットしたときに一度鳴らして、音が出ることを確かめる
-    alarm = { time, daily: $("alDaily").checked, fired: "" }; store.set("ouchi.alarm", alarm); renderAlarmTag();
+    await unlockAudio(); beep();   // セットしたときに一度鳴らして、音が出ることを確かめる
+    alarm = { time, daily: $("alDaily").checked, fired: "", snooze: null }; store.set("ouchi.alarm", alarm); renderAlarmTag();
     if ($("alRemind").checked && !DEMO) {
       const [h, m] = time.split(":").map(Number), d = new Date(); d.setHours(h, m, 0, 0); if (d <= new Date()) d.setDate(d.getDate() + 1);
       $("alMsg").textContent = "リマインダーに登録しています…";
-      try { const r = await callApi({ action: "remind", title: "アラーム", start: d.toISOString() }); if (!r.ok) throw new Error(r.error); refresh(); }
+      try { const r = await callWrite({ action: "remind", title: "アラーム", start: d.toISOString() }); if (!r.ok) throw new Error(r.error); refresh(); }
       catch (e) { $("alMsg").textContent = "アラームはセットしましたが、リマインダーには登録できませんでした：" + e.message; return; }
     }
-    $("alBg").hidden = true;
+    closeAlarm();
   });
   let ringKind = null, ringDone = null;
   /* アラームの音に自分の曲を使う（iPad の中＝IndexedDB に保存。鳴らすのは Web Audio で、1分かけて大きくする） */
@@ -1827,8 +1857,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
     return songBuf;
   }
   async function playSong(fadeSec) {
-    unlockAudio();
-    const buf = await loadSong(); if (!buf || !actx) return false;
+    await unlockAudio();
+    const buf = await loadSong();
+    if (!buf || !actx || actx.state !== "running") return false;
     stopSong();
     songSrc = actx.createBufferSource(); songSrc.buffer = buf; songSrc.loop = true;
     songGain = actx.createGain(); songSrc.connect(songGain); songGain.connect(actx.destination);
@@ -1848,7 +1879,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const msg = $("alMsg"); msg.classList.remove("err"); msg.textContent = "曲を読み込んでいます…";
     try {
       const ab = await f.arrayBuffer();
-      unlockAudio();
+      await unlockAudio();
       await actx.decodeAudioData(ab.slice(0));   // 鳴らせる形式か確かめる
       await idbDo("readwrite", (st) => st.put(ab, SOUND_KEY));
       store.set("ouchi.alarmSoundName", f.name.replace(/\.[^.]+$/, "")); songBuf = null;
@@ -1856,45 +1887,67 @@ input::placeholder { color: var(--muted); opacity: .8; }
     } catch (e) { msg.classList.add("err"); msg.textContent = "この曲は鳴らせませんでした（mp3・m4a などを選んでください。Apple Music の曲は使えません）。"; }
   });
   $("alSoundReset").addEventListener("click", async () => {
-    await idbDo("readwrite", (st) => st.delete(SOUND_KEY)); store.set("ouchi.alarmSoundName", null); songBuf = null; stopSong(); renderSoundName();
+    await idbDo("readwrite", (st) => st.delete(SOUND_KEY)); store.set("ouchi.alarmSoundName", null); songBuf = null; stopSong(); $("alSoundTest").textContent = "試しに鳴らす"; renderSoundName();
   });
   $("alSoundTest").addEventListener("click", async () => {
     const b = $("alSoundTest");
     if (songSrc) { stopSong(); b.textContent = "試しに鳴らす"; return; }
     if (await playSong(3)) { b.textContent = "止める"; setTimeout(() => { if (b.textContent === "止める") { stopSong(); b.textContent = "試しに鳴らす"; } }, 15000); }
-    else { unlockAudio(); beep(); }
+    else { await unlockAudio(); beep(); }
   });
   renderSoundName();
 
+  function setVisualRing(silent) {
+    $("ringBg").classList.toggle("visual-ring", silent);
+    $("ringMsg").textContent = silent ? "音の再生が制限されています（画面を一度触ると音が鳴ります）" : "";
+  }
   function ringFor(kind, text, onStop) {
     ringKind = kind; ringDone = onStop;
     $("ringHead").textContent = kind === "alarm" ? "アラーム" : "タイマー";
     $("ringTime").textContent = text; $("ringTime").style.fontSize = text.length > 5 ? "44px" : "";
+    $("ringSnooze").hidden = kind !== "alarm";
+    setVisualRing(false);
     $("ringBg").hidden = false;
-    try { if (actx) actx.resume(); } catch (e) {}
     // アラームで自分の曲があれば曲を（1分かけて大きく）、なければピピッ。どちらも最長5分
     let n = 0;
-    const fallback = () => { beep(); ringTimer = setInterval(() => { beep(); if (++n > 150) stopRing(); }, 2000); };
-    if (kind === "alarm" && store.get("ouchi.alarmSoundName")) {
-      ringTimer = setTimeout(stopRing, 5 * 60000);
-      playSong(60).then((ok) => { if (!ok && ringTimer) { clearTimeout(ringTimer); fallback(); } });
-    } else fallback();
+    const fallback = () => {
+      const ok = beep();
+      setVisualRing(!ok);
+      ringTimer = setInterval(() => { const played = beep(); setVisualRing(!played); if (++n > 150) stopRing(); }, 2000);
+    };
+    unlockAudio().then(() => {
+      if (ringKind !== kind || $("ringBg").hidden) return;
+      if (kind === "alarm" && store.get("ouchi.alarmSoundName")) {
+        ringTimer = setTimeout(stopRing, 5 * 60000);
+        playSong(60).then((ok) => { if (!ok && ringTimer) { clearTimeout(ringTimer); fallback(); } });
+      } else fallback();
+    });
   }
   function checkAlarm(d) {
     if (!alarm || ringTimer) return;
+    if (alarm.snooze && d.getTime() >= alarm.snooze) {
+      const tStr = hm(d);
+      alarm.snooze = null; store.set("ouchi.alarm", alarm);
+      ringFor("alarm", tStr, null); goTo(0); return;
+    }
     const key = `${ymd(d)} ${alarm.time}`;
-    if (`${pad(d.getHours())}:${pad(d.getMinutes())}` !== alarm.time || alarm.fired === key) return;
-    alarm.fired = key; store.set("ouchi.alarm", alarm);
+    if (!alarm.time || `${pad(d.getHours())}:${pad(d.getMinutes())}` !== alarm.time || alarm.fired === key) return;
+    alarm.fired = key; alarm.snooze = null; store.set("ouchi.alarm", alarm);
     ringFor("alarm", alarm.time, null); goTo(0);
   }
-  function stopRing() {
-    clearInterval(ringTimer); clearTimeout(ringTimer); ringTimer = null; stopSong(); $("ringBg").hidden = true;
+  function stopRing(snoozed) {
+    clearInterval(ringTimer); clearTimeout(ringTimer); ringTimer = null; stopSong(); setVisualRing(false); $("ringBg").hidden = true;
     const kind = ringKind, cb = ringDone; ringKind = ringDone = null;
     if (cb) cb();
-    if (kind === "alarm" && alarm && !alarm.daily) { alarm = null; store.set("ouchi.alarm", null); }
+    if (!snoozed && kind === "alarm" && alarm && !alarm.daily && !alarm.snooze) { alarm = null; store.set("ouchi.alarm", null); }
     renderAlarmTag();
   }
-  $("ringStop").addEventListener("click", stopRing);
+  $("ringStop").addEventListener("click", () => stopRing(false));
+  $("ringSnooze").addEventListener("click", () => {
+    if (!alarm) alarm = { time: "", daily: false, fired: "" };
+    alarm.snooze = Date.now() + 5 * 60000; store.set("ouchi.alarm", alarm);
+    stopRing(true);
+  });
 
   /* ---------- タイマー（この端末の中で動く。いくつでも） ---------- */
   let timers = (store.get("ouchi.timers") || []).filter((t) => t.end > Date.now() - 3600000);
@@ -1981,11 +2034,11 @@ input::placeholder { color: var(--muted); opacity: .8; }
     }
     if (DEMO) { asReply("試し表示では、タイマーとごみの日以外は答えられません。"); return; }
     try {
-      const r = await callApi({ action: "say", text });
+      const r = await callWrite({ action: "say", text });
       if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
       asReply(r.reply || "わかりました。");
       if (r.timer) addTimer(r.timer.seconds, r.timer.label);
-      if (r.changed) refresh();
+      if (r.changed) { clearMonthCache(); refresh(); }
     } catch (e) { asReply("できませんでした：" + e.message); }
   }
   /* ---------- ごみの日（規則は cfg.gomi に文のまま持つ。入れ直しのアドレスにも入る） ---------- */
@@ -2031,42 +2084,11 @@ input::placeholder { color: var(--muted); opacity: .8; }
   });
   renderGomi();
 
-  /* ---------- 気象警報・注意報（気象庁 bosai の令和8年の体系。地点の市区町村、10分おき） ---------- */
-  const WARN = (() => {
-    const t = {}, put = (codes, base, names) => codes.forEach((c, i) => { if (c) t[c] = { name: names[i], level: [50, 40, 30, 20][i] }; });
-    put(["33", "43", "03", "10"], "大雨", ["レベル5大雨特別警報", "レベル4大雨危険警報", "レベル3大雨警報", "レベル2大雨注意報"]);
-    put(["39", "49", "09", "29"], "土砂", ["レベル5土砂災害特別警報", "レベル4土砂災害危険警報", "レベル3土砂災害警報", "レベル2土砂災害注意報"]);
-    put(["38", "48", "08", "19"], "高潮", ["レベル5高潮特別警報", "レベル4高潮危険警報", "レベル3高潮警報", "レベル2高潮注意報"]);
-    put(["35", "", "05", "15"], "風", ["暴風特別警報", "", "暴風警報", "強風注意報"]);
-    put(["32", "", "02", "13"], "風雪", ["暴風雪特別警報", "", "暴風雪警報", "風雪注意報"]);
-    put(["36", "", "06", "12"], "雪", ["大雪特別警報", "", "大雪警報", "大雪注意報"]);
-    put(["37", "", "07", "16"], "波", ["波浪特別警報", "", "波浪警報", "波浪注意報"]);
-    [["14", "雷"], ["17", "融雪"], ["20", "濃霧"], ["21", "乾燥"], ["22", "なだれ"], ["23", "低温"], ["24", "霜"], ["25", "着氷"], ["26", "着雪"]].forEach(([c, n]) => { t[c] = { name: n + "注意報", level: 20 }; });
-    return t;
-  })();
-  function warnFrom(reports, area) {
-    const list = Array.isArray(reports) ? reports : [reports];
-    const latest = list.filter((r) => r && r.warning).sort((a, b) => String(a.reportDatetime).localeCompare(String(b.reportDatetime))).pop();
-    if (!latest) return [];
-    const it = (latest.warning.class20Items || []).find((a) => a.areaCode === area);
-    if (!it) return [];
-    return (it.kinds || []).filter((k) => k.code && WARN[k.code] && !/解除|なし/.test(k.status || "")).map((k) => WARN[k.code]).sort((a, b) => b.level - a.level);
-  }
-  // 「東京都日野市」→ 気象庁の区域（市区町村 1321200・府県 130000）。area.json から引き、端末に覚えておく
-  const PREFS = "北海道 青森県 岩手県 宮城県 秋田県 山形県 福島県 茨城県 栃木県 群馬県 埼玉県 千葉県 東京都 神奈川県 新潟県 富山県 石川県 福井県 山梨県 長野県 岐阜県 静岡県 愛知県 三重県 滋賀県 京都府 大阪府 兵庫県 奈良県 和歌山県 鳥取県 島根県 岡山県 広島県 山口県 徳島県 香川県 愛媛県 高知県 福岡県 佐賀県 長崎県 熊本県 大分県 宮崎県 鹿児島県 沖縄県".split(" ");
-  function areaFrom(area, place) {
-    const pi = PREFS.findIndex((p) => place.startsWith(p)); if (pi < 0) return null;
-    const pre = String(pi + 1).padStart(2, "0"), rest = place.slice(PREFS[pi].length);
-    let best = null;
-    Object.entries(area.class20s || {}).forEach(([code, v]) => {
-      if (!code.startsWith(pre)) return;
-      const nm = v.name.replace(/(北部|南部|東部|西部|中部)$/, "");
-      if (rest.startsWith(nm) && (!best || nm.length > best.len)) best = { code, len: nm.length };
-    });
-    if (!best) return null;
-    let c15 = area.class20s[best.code].parent, c10 = area.class15s[c15] && area.class15s[c15].parent, off = area.class10s[c10] && area.class10s[c10].parent;
-    return off ? { place, area: best.code, office: off } : null;
-  }
+  /* ---------- 気象警報・注意報（board-logic.js に委譲。地点の市区町村、10分おき） ---------- */
+  const WARN = window.BoardLogic.WARN;
+  const PREFS = window.BoardLogic.PREFS;
+  const warnFrom = window.BoardLogic.warnFrom;
+  const areaFrom = window.BoardLogic.areaFrom;
   async function warnArea() {
     const place = loc().place;
     if (place === "東京都日野市") return { place, area: "1321200", office: "130000" };
@@ -2098,31 +2120,10 @@ input::placeholder { color: var(--muted); opacity: .8; }
     return [];
   }
   function saveSince(list) { cfg = Object.assign({}, cfg || {}, { since: list }); if (!DEMO) store.set("ouchi.cfg", cfg); renderSince(); renderNext(); }
-  function daysSince(d) { return Math.round((new Date(today + "T00:00:00") - new Date(d + "T00:00:00")) / 864e5); }
+  function daysSince(d) { return window.BoardLogic.daysDiff(d, today); }
   function sinceDue() { return sinceItems().filter((x) => x.every && daysSince(x.d) >= x.every); }
-  // 「シーツ交換 14日ごと」「歯ブラシ 1か月」「掃除機 2週間ごと」「布団干し 10」
-  function parseSince(text) {
-    const s = window.normalizeJa ? window.normalizeJa(text) : text;
-    let every = 0, t = s;
-    const unit = (u) => /週/.test(u || "") ? 7 : /月/.test(u || "") ? 30 : /年/.test(u || "") ? 365 : 1;
-    // 「2日に1回」「1か月に一回」「2週間ごと」「3日おき」「月に1回」「週1」「毎月」「隔週」「10」（数字だけは日）
-    const m = s.match(/[\s、,]*(\d+)\s*(日|週間?|か月|ヶ月|カ月|ヵ月|月|年)?\s*(ごと|毎|おき|に\s*(1|一)\s*(回|度))?\s*$/);
-    if (m && m.index > 0 && (m[2] || m[3] || /\s/.test(s.slice(m.index - 1, m.index + 1)))) { every = Number(m[1]) * unit(m[2]) + (m[3] === "おき" && unit(m[2]) === 1 ? 1 : 0); t = s.slice(0, m.index); }
-    else if (/(毎月|月[にい]?\s*(1|一)\s*[回度]?)\s*$/.test(s)) { every = 30; t = s.replace(/[\s、,]*(毎月|月[にい]?\s*(1|一)\s*[回度]?)\s*$/, ""); }
-    else if (/(毎週|週[にい]?\s*(1|一)\s*[回度]?)\s*$/.test(s)) { every = 7; t = s.replace(/[\s、,]*(毎週|週[にい]?\s*(1|一)\s*[回度]?)\s*$/, ""); }
-    else if (/隔週\s*$/.test(s)) { every = 14; t = s.replace(/[\s、,]*隔週\s*$/, ""); }
-    else if (/(毎年|年[にい]?\s*(1|一)\s*[回度]?)\s*$/.test(s)) { every = 365; t = s.replace(/[\s、,]*(毎年|年[にい]?\s*(1|一)\s*[回度]?)\s*$/, ""); }
-    else if (/(1|一)日おき\s*$/.test(s)) { every = 2; t = s.replace(/[\s、,]*(1|一)日おき\s*$/, ""); }
-    t = t.trim();
-    return t ? { t, d: today, every } : null;
-  }
-  function everyLabel(n) {
-    if (n === 1) return "毎日";
-    if (n % 365 === 0) return n === 365 ? "年に1回" : n / 365 + "年に1回";
-    if (n % 30 === 0) return n === 30 ? "月に1回" : n / 30 + "か月に1回";
-    if (n % 7 === 0) return n === 7 ? "週に1回" : n / 7 + "週間に1回";
-    return n + "日に1回";
-  }
+  function parseSince(text) { return window.BoardLogic.parseSince(text, today, window.normalizeJa); }
+  const everyLabel = window.BoardLogic.everyLabel;
   function renderSince() {
     const ul = $("sinceList"); ul.textContent = "";
     const list = sinceItems();
@@ -2198,10 +2199,12 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
 
   /* ---------- 月のカレンダー（予定は裏方の action=month。古い裏方なら祝日とごみの日だけ） ---------- */
-  let calYm = null;
+  let calYm = null, calSelDay = null, calLastEvs = [];
   const monthCache = {};
+  function clearMonthCache() { Object.keys(monthCache).forEach((k) => delete monthCache[k]); }
   async function openCal(ym) {
     const d0 = new Date(); calYm = ym || `${d0.getFullYear()}-${pad(d0.getMonth() + 1)}`;
+    calSelDay = null; $("calDetail").hidden = true;
     $("calBg").hidden = false; drawCal([]);
     if (DEMO) { drawCal(((data && data.events) || []).map(parseEv)); return; }
     const want = calYm, hit = monthCache[want];
@@ -2214,7 +2217,48 @@ input::placeholder { color: var(--muted); opacity: .8; }
       if (want === calYm && !$("calBg").hidden) drawCal(evs);
     } catch (e) { if (want === calYm) $("calNote").textContent = e.message; }
   }
+  function eventsOnDay(evs, key) {
+    const day0 = new Date(key + "T00:00:00"), day1 = new Date(day0); day1.setDate(day1.getDate() + 1);
+    return evs.filter((x) => x.s < day1 && x.en > day0 && !(x.allDay && x.en <= day0))
+      .sort((a, b) => (a.allDay === b.allDay ? a.s - b.s : a.allDay ? -1 : 1));
+  }
+  function renderCalDetail() {
+    const box = $("calDetail");
+    if (!calSelDay) { box.hidden = true; return; }
+    const d = new Date(calSelDay + "T00:00:00"), hol = holidayName(d);
+    const dayEvs = eventsOnDay(calLastEvs, calSelDay);
+    const dayGomi = window.Gomi ? Gomi.gomiOn(gomiRules(), d) : [];
+    box.textContent = "";
+    const head = el("div", "cal-detail-head");
+    const ttl = el("span", null, `${d.getMonth() + 1}月${d.getDate()}日（${WD[d.getDay()]}）${hol ? "　" + hol : ""}`);
+    const addBtn = el("button", "btn", "＋ この日に予定を追加"); addBtn.type = "button";
+    addBtn.style.cssText = "min-height:36px;padding:4px 12px;font-size:14px";
+    addBtn.addEventListener("click", () => {
+      $("calBg").hidden = true; goTo(1);
+      if (evFormCtl) evFormCtl.prefillDate(calSelDay);
+    });
+    head.append(ttl, addBtn); box.append(head);
+    const ul = el("ul", "cal-detail-list");
+    dayEvs.forEach((x) => {
+      const li = el("li");
+      li.append(el("span", "t", x.allDay ? "終日" : hm(x.s)));
+      const b = el("div");
+      b.append(el("div", null, x.e.title || "（タイトルなし）"));
+      if (x.e.location) b.append(el("div", "note", x.e.location));
+      const eb = editBtn({ kind: "ev", e: x.e, s: x.s, allDay: x.allDay });
+      if (eb.tagName === "BUTTON") eb.addEventListener("click", () => { $("calBg").hidden = true; }, { capture: true });
+      li.append(b, eb); ul.append(li);
+    });
+    dayGomi.forEach((r) => {
+      const li = el("li");
+      li.append(el("span", "t gm", "ごみ"), el("span", null, r.name + (r.until ? `（${r.until}まで）` : "")), el("span"));
+      ul.append(li);
+    });
+    if (!dayEvs.length && !dayGomi.length) ul.append(el("li", "empty", "予定はありません。"));
+    box.append(ul); box.hidden = false;
+  }
   function drawCal(evs) {
+    calLastEvs = evs;
     const [y, m] = calYm.split("-").map(Number);
     $("calTitle").textContent = `${y}年${m}月`; $("calNote").textContent = "";
     const g = $("calGrid"); g.textContent = "";
@@ -2225,17 +2269,22 @@ input::placeholder { color: var(--muted); opacity: .8; }
     for (let i = 0; i < weeks * 7; i++) {
       const d = new Date(start); d.setDate(start.getDate() + i);
       const key = ymd(d), hol = holidayName(d);
-      const box = el("div", "day" + (d.getMonth() !== m - 1 ? " out" : "") + (key === today ? " today" : "") + (d.getDay() === 0 ? " sun" : d.getDay() === 6 ? " sat" : "") + (hol ? " hol" : ""));
+      const box = el("button", "day" + (d.getMonth() !== m - 1 ? " out" : "") + (key === today ? " today" : "") + (key === calSelDay ? " sel" : "") + (d.getDay() === 0 ? " sun" : d.getDay() === 6 ? " sat" : "") + (hol ? " hol" : ""));
+      box.type = "button"; box.dataset.day = key;
       box.append(el("span", "n", String(d.getDate())));
       if (hol) box.append(el("span", "hn", hol));
-      const day0 = new Date(key + "T00:00:00"), day1 = new Date(day0); day1.setDate(day1.getDate() + 1);
-      const items = evs.filter((x) => x.s < day1 && x.en > day0 && !(x.allDay && x.en <= day0)).sort((a, b) => (a.allDay === b.allDay ? a.s - b.s : a.allDay ? -1 : 1))
-        .map((x) => ({ t: (x.allDay ? "" : hm(x.s) + " ") + x.e.title, cls: "ev" }));
+      const items = eventsOnDay(evs, key).map((x) => ({ t: (x.allDay ? "" : hm(x.s) + " ") + x.e.title, cls: "ev" }));
       if (window.Gomi) Gomi.gomiOn(rules, d).forEach((r) => items.push({ t: r.name, cls: "ev gm" }));
       items.slice(0, 3).forEach((it) => box.append(el("span", it.cls, it.t)));
       if (items.length > 3) box.append(el("span", "more", `ほか${items.length - 3}件`));
+      box.addEventListener("click", () => {
+        calSelDay = calSelDay === key ? null : key;
+        g.querySelectorAll(".day").forEach((b) => b.classList.toggle("sel", b.dataset.day === calSelDay));
+        renderCalDetail();
+      });
       g.append(box);
     }
+    if (calSelDay) renderCalDetail();
   }
   const shiftMonth = (k) => { const [y, m] = calYm.split("-").map(Number); const d = new Date(y, m - 1 + k, 1); openCal(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`); };
   $("openCal").addEventListener("click", () => openCal());
@@ -2252,18 +2301,8 @@ input::placeholder { color: var(--muted); opacity: .8; }
     return [];
   }
   function saveCd(list) { cfg = Object.assign({}, cfg || {}, { countdown: list }); if (!DEMO) store.set("ouchi.cfg", cfg); renderCd(); renderNext(); }
-  function daysUntil(d) { return Math.round((new Date(d + "T00:00:00") - new Date(today + "T00:00:00")) / 864e5); }
-  // 「旅行 12/20」「誕生日 1月5日」「卒業 2027/3/20」。年がなく、今年の日付が過ぎていれば来年
-  function parseCd(text) {
-    const s = (window.normalizeJa ? window.normalizeJa(text) : text).replace(/(\d{1,2})月(\d{1,2})日/, "$1/$2");
-    const m = s.match(/(?:(\d{4})\/)?(\d{1,2})\/(\d{1,2})/); if (!m) return null;
-    const t = s.replace(m[0], "").replace(/\s+/g, " ").trim(); if (!t) return null;
-    const now = new Date(today + "T00:00:00");
-    let d = new Date(Number(m[1] || now.getFullYear()), Number(m[2]) - 1, Number(m[3]));
-    if (d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) return null;   // 2/30 など
-    if (!m[1] && d < now) d = new Date(d.getFullYear() + 1, d.getMonth(), d.getDate());
-    return { t, d: ymd(d) };
-  }
+  function daysUntil(d) { return window.BoardLogic.daysDiff(today, d); }
+  function parseCd(text) { return window.BoardLogic.parseCd(text, today, window.normalizeJa); }
   function renderCd() {
     const ul = $("cdList"); ul.textContent = "";
     const all = cdItems(), list = all.map((x, i) => ({ x, i, n: daysUntil(x.d) })).filter((y) => y.n >= 0).sort((a, b) => a.n - b.n);
@@ -2381,7 +2420,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     renderMail(); renderNext();
     if (DEMO) return;
     try {
-      const r = await callApi(Object.assign({ action: "mailRead" }, q.all ? { all: "1" } : { id: q.id }));
+      const r = await callWrite(Object.assign({ action: "mailRead" }, q.all ? { all: "1" } : { id: q.id }));
       if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
       if (r.mail && data) { data.mail = r.mail; store.set("ouchi.last", data); renderMail(); renderNext(); }
       msg.textContent = q.all ? "受信トレイの未読をすべて既読にしました。" : "";
@@ -2414,7 +2453,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       if (DEMO) { msg.textContent = "試し表示では保存しません。"; return; }
       msg.textContent = "保存しています…";
       try {
-        const r = await callApi({ action: "mailPrefs", important: $("pfMailImp").checked ? "1" : "0", from: $("pfMailFrom").value.trim(), days: $("pfMailDays").value || "3" });
+        const r = await callWrite({ action: "mailPrefs", important: $("pfMailImp").checked ? "1" : "0", from: $("pfMailFrom").value.trim(), days: $("pfMailDays").value || "3" });
         if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
         if (r.mail && data) { data.mail = r.mail; store.set("ouchi.last", data); renderMail(); renderNext(); }
         msg.textContent = "大事なメールの条件を保存しました。";
@@ -2613,8 +2652,9 @@ input::placeholder { color: var(--muted); opacity: .8; }
   }
   function addMemo(text) {
     if (!text || !data) return;
-    data.memos = (data.memos || []).concat({ id: "tmp" + Date.now(), text, done: false }); renderMemos();
-    memoCall({ action: "memoAdd", text });
+    const tmpId = "tmp" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+    data.memos = (data.memos || []).concat({ id: tmpId, text, done: false }); renderMemos();
+    memoCall({ action: "memoAdd", text }, tmpId);
   }
   function renderMemos() {
     const ul = $("memoList"); ul.textContent = "";
@@ -2623,20 +2663,27 @@ input::placeholder { color: var(--muted); opacity: .8; }
     $("memoCount").textContent = list.length ? `${list.filter((m) => !m.done).length} 件` : "";
     if (!list.length) ul.append(el("li", "empty", data && !("memos" in data) && !DEMO ? "メモには裏方（Apps Script）の更新が必要です。" : "メモはありません。"));
     list.forEach((m) => {
-      const li = el("li", "memo"), b = el("button", "chk"); b.type = "button"; b.setAttribute("aria-pressed", String(!!m.done));
+      const pending = String(m.id || "").startsWith("tmp");
+      const li = el("li", "memo" + (pending ? " pending" : "")), b = el("button", "chk"); b.type = "button"; b.disabled = pending; b.setAttribute("aria-pressed", String(!!m.done));
       const box = el("span", "box"); box.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
       b.append(box, el("span", "label", m.text));
-      b.addEventListener("click", () => { m.done = !m.done; renderMemos(); memoCall({ action: "memoSet", id: m.id, on: m.done ? "1" : "0" }); });
-      const x = el("button", "more", "×"); x.type = "button"; x.setAttribute("aria-label", `「${m.text}」を消す`);
-      x.addEventListener("click", () => { data.memos = data.memos.filter((y) => y !== m); renderMemos(); memoCall({ action: "memoDel", id: m.id }); });
+      b.addEventListener("click", () => { if (pending) return; m.done = !m.done; renderMemos(); memoCall({ action: "memoSet", id: m.id, on: m.done ? "1" : "0" }); });
+      const x = el("button", "more", "×"); x.type = "button"; x.disabled = pending; x.setAttribute("aria-label", `「${m.text}」を消す`);
+      x.addEventListener("click", () => { if (pending) return; data.memos = data.memos.filter((y) => y !== m); renderMemos(); memoCall({ action: "memoDel", id: m.id }); });
       li.append(b, x); ul.append(li);
     });
   }
   let memoQueue = Promise.resolve();
-  function memoCall(q) {
+  function memoCall(q, tmpId) {
     if (DEMO) return;
-    memoQueue = memoQueue.then(() => callApi(q)).then((r) => { if (!r.ok) throw new Error(r.error); if (r.memos && data) { data.memos = r.memos; renderMemos(); } })
-      .catch((e) => { $("statusText").textContent = "メモを保存できませんでした"; refresh(); });
+    memoQueue = memoQueue.then(() => callWrite(q)).then((r) => {
+      if (!r.ok) throw new Error(r.error);
+      if (r.memos && data) {
+        // まだ裏方に送り終わっていない別の追加分（tmpId 以外の tmp）を消さないように残す
+        const rest = (data.memos || []).filter((m) => String(m.id || "").startsWith("tmp") && m.id !== tmpId);
+        data.memos = r.memos.concat(rest); renderMemos();
+      }
+    }).catch(() => { $("statusText").textContent = "メモを保存できませんでした"; refresh(); });
   }
   $("memoForm").addEventListener("submit", (ev) => {
     ev.preventDefault();
@@ -2674,7 +2721,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     const text = el("input"); text.type = "text"; text.placeholder = o.placeholder; text.enterKeyHint = "done"; text.setAttribute("aria-label", o.label);
     const mic = el("button", "btn mic", "🎤"); mic.type = "button"; mic.hidden = !SR; mic.setAttribute("aria-pressed", "false"); mic.setAttribute("aria-label", "声で入力");
     const row1 = el("div", "rm-row"); row1.append(text, mic);
-    const what = el("div", "what");
+    const what = el("input", "what-in"); what.type = "text"; what.placeholder = "登録する内容"; what.setAttribute("aria-label", "登録する内容");
     const when = el("input"); when.type = "datetime-local"; when.setAttribute("aria-label", "日時");
     const rowWhen = el("div", "rm-row"); rowWhen.append(when);
     let allDay = null;
@@ -2695,7 +2742,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
       if (!text.value.trim()) { preview.hidden = true; parsed = null; return; }
       parsed = window.parseRemind(text.value);
       preview.hidden = false;
-      what.textContent = parsed.title || "（内容を入れてください）";
+      what.value = parsed.title || "";
       if (parsed.found) { when.value = toLocalInput(parsed.start); if (allDay) allDay.checked = !parsed.timeGiven; }
       else {
         if (!when.value) { const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0); when.value = toLocalInput(t); }
@@ -2703,13 +2750,13 @@ input::placeholder { color: var(--muted); opacity: .8; }
       }
     }
     text.addEventListener("input", update);
-    clear.addEventListener("click", () => { text.value = ""; when.value = ""; update(); });
+    clear.addEventListener("click", () => { text.value = ""; what.value = ""; when.value = ""; update(); });
     form.addEventListener("submit", async (ev) => {
       ev.preventDefault();
-      if (!parsed) { update(); if (!parsed) return; }
-      const title = parsed.title, d = new Date(when.value), isAllDay = !!(allDay && allDay.checked);
+      if (!parsed && text.value.trim()) update();
+      const title = what.value.trim(), d = new Date(when.value), isAllDay = !!(allDay && allDay.checked);
       msg.className = "rm-msg";
-      if (!title) { msg.textContent = "内容を入れてください。"; msg.classList.add("err"); return; }
+      if (!title) { msg.textContent = "内容を入れてください。"; msg.classList.add("err"); what.focus(); return; }
       if (isNaN(d)) { msg.textContent = "日時を選んでください。"; msg.classList.add("err"); return; }
       const label = `${dayStr(d)}${isAllDay ? "" : " " + hm(d)}「${title}」`;
       if (DEMO) { msg.textContent = `登録しました（試し表示）：${label}`; return; }
@@ -2717,10 +2764,11 @@ input::placeholder { color: var(--muted); opacity: .8; }
       try {
         const q = kind === "rm" ? { action: "remind", title, start: d.toISOString() }
           : { action: "event", title, start: d.toISOString(), allday: isAllDay ? "1" : "0", date: ymd(d) };
-        const r = await callApi(q);
+        const r = await callWrite(q);
         if (!r.ok) throw new Error(r.error === "unknown_action" ? "裏方（Apps Script）の更新が必要です" : r.error);
         msg.textContent = `登録しました：${label}` + (kind === "rm" ? "。その時刻に通知が届きます。" : "");
-        text.value = ""; when.value = ""; preview.hidden = true; parsed = null;
+        text.value = ""; what.value = ""; when.value = ""; preview.hidden = true; parsed = null;
+        if (kind === "ev") clearMonthCache();
         refresh();
       } catch (e) { msg.textContent = "登録できませんでした：" + e.message; msg.classList.add("err"); }
       finally { add.disabled = false; }
@@ -2739,9 +2787,17 @@ input::placeholder { color: var(--muted); opacity: .8; }
         rec.start(); mic.setAttribute("aria-pressed", "true");
       } catch (e) { rec = null; msg.textContent = "この画面では声の入力が使えません。キーボードのマイクボタンを使ってください。"; }
     });
+    return {
+      prefillDate(ymdStr) {
+        text.value = ""; parsed = null; preview.hidden = false; msg.textContent = "";
+        what.value = ""; when.value = `${ymdStr}T09:00`; if (allDay) allDay.checked = true;
+        what.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => what.focus(), 180);
+      },
+    };
   }
   buildForm("rm", { placeholder: "例：1週間後にラップを外す", label: "リマインダーの内容", button: "リマインダーに登録" });
-  buildForm("ev", { placeholder: "例：あさって15時 歯医者", label: "予定の内容", button: "カレンダーに登録" });
+  const evFormCtl = buildForm("ev", { placeholder: "例：あさって15時 歯医者", label: "予定の内容", button: "カレンダーに登録" });
 
   /* ---------- 試し表示（?demo=1 写真なしは &photo=0） ---------- */
   function demoPhoto(seed) {
@@ -2825,7 +2881,7 @@ input::placeholder { color: var(--muted); opacity: .8; }
     if (params.get("info")) setTimeout(openInfo, Number(params.get("info")) || 6000);   // 確認用
     const p = Number(params.get("page")); if (p) goTo(p, true);
     if (params.get("tool")) goToTool(params.get("tool"));   // 確認用
-    if (params.get("sheet") === "wx") openWeather(); else if (params.get("sheet") === "cal") openCal(); else if (params.get("sheet") === "alarm") { alarm = { time: "07:00", daily: true }; renderAlarmTag(); openAlarm(); }   // 確認用
+    if (params.get("sheet") === "wx") openWeather(); else if (params.get("sheet") === "cal") openCal(); else if (params.get("sheet") === "alarm") { alarm = { time: "07:00", daily: true }; renderAlarmTag(); openAlarm(); } else if (params.get("sheet") === "ring") { alarm = { time: "07:00", daily: true }; ringFor("alarm", "07:00", null); }   // 確認用
     if (params.get("quake") === "1") showQuake({ id: "demo", t: new Date(), max: 40, tokyo: 30, name: "千葉県北西部", mag: 5.1, tsunami: "None" });   // 確認用
     if (params.get("sheet") === "1") { const e = data.events[0]; openSheet({ kind: "ev", e, s: new Date(e.start), allDay: false }); }   // 確認用
     return;
